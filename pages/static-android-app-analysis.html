@@ -1,0 +1,1796 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Android Static Analysis — Advanced Techniques Field Guide</title>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@300;400;500;600&family=Bebas+Neue&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,300&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:       #06080B;
+  --surface:  #0C0F14;
+  --panel:    #111520;
+  --raised:   #161C28;
+  --border:   #1E2535;
+  --accent:   #00E5FF;
+  --green:    #00FF9C;
+  --orange:   #FF8C42;
+  --red:      #FF3B5C;
+  --purple:   #9D6EFF;
+  --yellow:   #FFD166;
+  --white:    #DDE4F0;
+  --muted:    #7A8499;
+  --dimmed:   #3D4559;
+  --code-bg:  #030508;
+  --code-cmd: #FFD166;
+  --code-out: #00FF9C;
+  --code-cmt: #3D4559;
+}
+
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+
+body {
+  background: var(--bg);
+  color: var(--white);
+  font-family: 'DM Sans', sans-serif;
+  font-size: 15px;
+  line-height: 1.7;
+  overflow-x: hidden;
+}
+
+/* scanline */
+body::after {
+  content:'';
+  position:fixed;inset:0;
+  background:repeating-linear-gradient(0deg,transparent,transparent 3px,rgba(0,229,255,0.012) 3px,rgba(0,229,255,0.012) 4px);
+  pointer-events:none;z-index:9999;
+}
+
+/* ── SIDEBAR ── */
+.sidebar {
+  position:fixed;left:0;top:0;bottom:0;width:230px;
+  background:var(--surface);
+  border-right:1px solid var(--border);
+  overflow-y:auto;z-index:100;
+  display:flex;flex-direction:column;
+}
+
+.sidebar-brand {
+  padding:20px 18px 16px;
+  border-bottom:1px solid var(--border);
+}
+
+.sidebar-brand .title {
+  font-family:'Bebas Neue',sans-serif;
+  font-size:22px;letter-spacing:2px;
+  color:var(--accent);line-height:1.1;
+}
+
+.sidebar-brand .sub {
+  font-family:'Fira Code',monospace;
+  font-size:9px;color:var(--muted);
+  letter-spacing:2px;margin-top:4px;
+}
+
+.nav-label {
+  font-family:'Fira Code',monospace;
+  font-size:9px;color:var(--dimmed);
+  letter-spacing:2px;text-transform:uppercase;
+  padding:16px 18px 5px;
+}
+
+.nav-link {
+  display:flex;align-items:center;gap:10px;
+  padding:7px 18px;
+  color:var(--muted);text-decoration:none;
+  font-size:12.5px;font-family:'DM Sans',sans-serif;
+  border-left:2px solid transparent;
+  transition:all 0.15s;
+}
+.nav-link:hover,.nav-link.active {
+  color:var(--white);
+  background:rgba(0,229,255,0.05);
+  border-left-color:var(--accent);
+}
+.nav-link .num {
+  font-family:'Fira Code',monospace;
+  font-size:10px;color:var(--dimmed);width:20px;flex-shrink:0;
+}
+
+/* ── PROGRESS ── */
+.progress-bar {
+  position:fixed;top:0;left:230px;right:0;
+  height:2px;background:var(--border);z-index:200;
+}
+.progress-fill {
+  height:100%;width:0%;
+  background:linear-gradient(90deg,var(--accent),var(--purple));
+  transition:width 0.08s;
+}
+
+/* ── MAIN ── */
+.main { margin-left:230px; }
+
+/* ── HERO ── */
+.hero {
+  padding:72px 64px 56px;
+  background:var(--surface);
+  border-bottom:1px solid var(--border);
+  position:relative;overflow:hidden;
+}
+.hero::before {
+  content:'STATIC';
+  position:absolute;right:-30px;top:50%;transform:translateY(-50%);
+  font-family:'Bebas Neue',sans-serif;font-size:200px;
+  color:rgba(0,229,255,0.025);pointer-events:none;line-height:1;
+}
+.hero-eyebrow {
+  font-family:'Fira Code',monospace;font-size:10px;
+  color:var(--accent);letter-spacing:3px;text-transform:uppercase;
+  margin-bottom:16px;display:flex;align-items:center;gap:10px;
+}
+.hero-eyebrow::before{content:'';width:28px;height:1px;background:var(--accent);}
+
+h1 {
+  font-family:'Bebas Neue',sans-serif;
+  font-size:64px;letter-spacing:2px;line-height:1;
+  color:var(--white);margin-bottom:8px;
+}
+h1 span{color:var(--accent);}
+
+.hero-desc {
+  font-size:15px;color:var(--muted);
+  max-width:580px;line-height:1.7;margin-bottom:28px;
+}
+
+.tool-row{display:flex;flex-wrap:wrap;gap:7px;}
+.tool-chip {
+  font-family:'Fira Code',monospace;font-size:10px;
+  padding:3px 10px;border:1px solid var(--border);
+  color:var(--muted);border-radius:2px;
+  background:rgba(255,255,255,0.02);
+}
+
+/* ── CONTENT ── */
+.content{max-width:880px;padding:0 64px 80px;}
+
+/* ── SECTION ── */
+.section{padding-top:60px;}
+
+.sec-head {
+  display:flex;align-items:flex-start;gap:16px;
+  margin-bottom:28px;padding-bottom:20px;
+  border-bottom:1px solid var(--border);
+}
+.sec-num {
+  font-family:'Fira Code',monospace;font-size:10px;
+  color:var(--accent);background:rgba(0,229,255,0.07);
+  border:1px solid rgba(0,229,255,0.18);
+  padding:3px 8px;border-radius:2px;flex-shrink:0;margin-top:5px;
+}
+h2 {
+  font-family:'Bebas Neue',sans-serif;
+  font-size:32px;letter-spacing:1px;color:var(--white);
+  line-height:1.1;margin-bottom:4px;
+}
+.sec-sub{font-size:13.5px;color:var(--muted);font-style:italic;}
+
+/* ── H3 ── */
+h3 {
+  font-family:'DM Sans',sans-serif;font-weight:500;
+  font-size:15px;color:var(--accent);
+  margin:32px 0 10px;
+  display:flex;align-items:center;gap:8px;
+  text-transform:uppercase;letter-spacing:1px;
+}
+h3::before{content:'//';font-family:'Fira Code',monospace;font-size:12px;color:var(--dimmed);}
+
+/* ── THINK BLOCK ── */
+.think {
+  background:linear-gradient(135deg,rgba(0,229,255,0.04),rgba(157,110,255,0.03));
+  border:1px solid rgba(0,229,255,0.1);
+  border-left:3px solid var(--accent);
+  border-radius:3px;padding:18px 22px;margin:16px 0 24px;
+}
+.think-label {
+  font-family:'Fira Code',monospace;font-size:9px;
+  color:var(--accent);letter-spacing:2px;
+  margin-bottom:10px;opacity:0.7;
+}
+.think p{color:var(--muted);font-style:italic;font-size:14px;line-height:1.85;}
+.think p+p{margin-top:8px;}
+
+/* ── BODY TEXT ── */
+.body{color:var(--muted);font-size:14.5px;line-height:1.8;margin:8px 0 16px;}
+.body strong{color:var(--white);font-weight:500;}
+.body code{
+  font-family:'Fira Code',monospace;font-size:12.5px;
+  color:var(--accent);background:rgba(0,229,255,0.07);
+  padding:1px 5px;border-radius:2px;
+}
+
+/* ── CMD BLOCK ── */
+.cmd-block {
+  background:var(--code-bg);
+  border:1px solid var(--border);
+  border-radius:4px;overflow:hidden;
+  margin:10px 0 18px;
+  font-family:'Fira Code',monospace;font-size:12.5px;
+}
+.cmd-head {
+  background:var(--panel);padding:7px 14px;
+  font-size:9px;color:var(--dimmed);letter-spacing:2px;text-transform:uppercase;
+  border-bottom:1px solid var(--border);
+  display:flex;align-items:center;gap:8px;
+}
+.cmd-head::before{
+  content:'';width:7px;height:7px;border-radius:50%;
+  background:var(--red);flex-shrink:0;
+  box-shadow:12px 0 0 var(--orange),24px 0 0 var(--green);
+}
+
+.cmd-row {
+  display:flex;flex-direction:column;gap:4px;
+  padding:9px 14px;
+  border-bottom:1px solid rgba(30,37,53,0.7);
+  transition:background 0.1s;
+}
+.cmd-row:last-child{border-bottom:none;}
+.cmd-row:hover{background:rgba(0,229,255,0.03);}
+
+.cmd-t {
+  color:var(--code-cmd);
+  white-space:pre-wrap;
+  word-break:break-word;
+  overflow-wrap:break-word;
+  line-height:1.65;
+}
+.cmd-n {
+  color:var(--code-cmt);font-size:11px;
+  padding-left:10px;
+  border-left:2px solid rgba(0,229,255,0.12);
+  line-height:1.5;word-break:break-word;
+}
+
+/* ── OUTPUT BLOCK ── */
+.out-block{margin:10px 0 22px;}
+.out-label {
+  font-family:'Fira Code',monospace;font-size:10px;
+  color:var(--green);margin-bottom:5px;
+  display:flex;align-items:center;gap:7px;
+}
+.out-label::before{content:'▶';font-size:8px;}
+.out-pre {
+  background:#020805;
+  border:1px solid rgba(0,255,156,0.15);
+  border-left:3px solid var(--green);
+  border-radius:3px;padding:14px 18px;
+  font-family:'Fira Code',monospace;font-size:12px;
+  color:#33CC77;white-space:pre;overflow-x:auto;line-height:1.9;
+}
+.out-pre .h{color:var(--red);font-weight:600;}
+.out-pre .g{color:var(--green);}
+.out-pre .c{color:var(--dimmed);}
+.out-pre .y{color:var(--yellow);}
+.out-pre .p{color:var(--purple);}
+
+/* ── FINDINGS ── */
+.findings{display:flex;flex-direction:column;gap:2px;margin:14px 0 22px;}
+.finding {
+  display:grid;grid-template-columns:88px 1fr;
+  background:var(--panel);border:1px solid var(--border);
+  border-radius:3px;overflow:hidden;transition:border-color 0.15s;
+}
+.finding:hover{border-color:var(--dimmed);}
+.f-sev {
+  padding:14px 10px;
+  font-family:'Fira Code',monospace;font-size:9px;font-weight:600;
+  letter-spacing:1px;display:flex;align-items:flex-start;
+  justify-content:center;padding-top:17px;
+}
+.f-sev.c{color:var(--red);    background:rgba(255,59,92,0.06);}
+.f-sev.h{color:var(--orange); background:rgba(255,140,66,0.06);}
+.f-sev.m{color:var(--yellow); background:rgba(255,209,102,0.06);}
+.f-sev.i{color:var(--accent); background:rgba(0,229,255,0.06);}
+.f-body{padding:13px 15px;border-left:1px solid var(--border);}
+.f-title{font-weight:500;color:var(--white);font-size:14px;margin-bottom:5px;}
+.f-detail{font-size:13.5px;color:var(--muted);line-height:1.65;}
+
+/* ── CALLOUT ── */
+.callout {
+  border-radius:3px;padding:12px 16px;margin:14px 0;
+  font-size:13.5px;display:flex;gap:10px;align-items:flex-start;line-height:1.65;
+}
+.callout-icon{flex-shrink:0;font-size:15px;margin-top:1px;}
+.callout.cr{background:rgba(255,59,92,0.06);  border:1px solid rgba(255,59,92,0.2);  color:#FF8FA0;}
+.callout.wa{background:rgba(255,140,66,0.06); border:1px solid rgba(255,140,66,0.2); color:#FFBA80;}
+.callout.ti{background:rgba(0,255,156,0.05);  border:1px solid rgba(0,255,156,0.18); color:#70EAA0;}
+.callout.in{background:rgba(0,229,255,0.05);  border:1px solid rgba(0,229,255,0.18); color:#80DDFF;}
+
+/* ── TECHNIQUE CARD ── */
+.tech-card {
+  background:var(--panel);border:1px solid var(--border);
+  border-radius:4px;padding:18px 20px;margin:10px 0 18px;
+}
+.tech-card-title {
+  font-family:'Fira Code',monospace;font-size:11px;
+  color:var(--purple);letter-spacing:1px;margin-bottom:10px;
+  display:flex;align-items:center;gap:8px;
+}
+.tech-card-title::before{content:'◆';font-size:8px;}
+
+/* ── DIVIDER ── */
+.div{height:1px;background:linear-gradient(90deg,var(--border),transparent);margin:48px 0 0;}
+
+/* ── CHECKLIST ── */
+.checklist{margin:14px 0;}
+.check-item {
+  display:grid;grid-template-columns:76px 1fr;
+  background:var(--panel);border:1px solid var(--border);
+  border-radius:3px;overflow:hidden;margin-bottom:2px;
+  cursor:pointer;transition:background 0.1s;
+}
+.check-item:hover{background:rgba(255,255,255,0.02);}
+.check-item.done{opacity:0.45;}
+.check-item.done .check-text{text-decoration:line-through;color:var(--dimmed);}
+.check-ph {
+  padding:9px 10px;
+  font-family:'Fira Code',monospace;font-size:9px;
+  color:var(--dimmed);font-weight:600;letter-spacing:1px;
+  display:flex;align-items:center;
+  background:rgba(255,255,255,0.01);border-right:1px solid var(--border);
+}
+.check-wrap{padding:9px 13px;display:flex;align-items:center;gap:9px;}
+.check-box {
+  width:13px;height:13px;border:1px solid var(--dimmed);
+  border-radius:2px;flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;
+  font-size:9px;color:var(--green);transition:all 0.15s;
+}
+.check-item.done .check-box{background:rgba(0,255,156,0.1);border-color:var(--green);}
+.check-text{font-size:13.5px;color:var(--white);transition:all 0.15s;}
+
+/* ── SCROLLBAR ── */
+::-webkit-scrollbar{width:5px;height:5px;}
+::-webkit-scrollbar-track{background:var(--bg);}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px;}
+::-webkit-scrollbar-thumb:hover{background:var(--dimmed);}
+
+/* ── RESPONSIVE ── */
+@media(max-width:900px){
+  .sidebar{display:none;}
+  .main{margin-left:0;}
+  .content,.hero{padding-left:20px;padding-right:20px;}
+  h1{font-size:42px;}
+  .progress-bar{left:0;}
+}
+
+/* ── ANIM ── */
+@keyframes fadeUp{from{opacity:0;transform:translateY(14px);}to{opacity:1;transform:translateY(0);}}
+.section{animation:fadeUp 0.35s ease both;}
+</style>
+</head>
+<body>
+
+<div class="progress-bar"><div class="progress-fill" id="prog"></div></div>
+
+<!-- SIDEBAR -->
+<nav class="sidebar">
+  <div class="sidebar-brand">
+    <div class="title">ANDROID<br>STATIC<br>ANALYSIS</div>
+    <div class="sub">ADVANCED FIELD GUIDE</div>
+  </div>
+  <div class="nav-label">Sections</div>
+  <a href="#s1"  class="nav-link"><span class="num">01</span>Mindset &amp; Setup</a>
+  <a href="#s2"  class="nav-link"><span class="num">02</span>APK Extraction</a>
+  <a href="#s3"  class="nav-link"><span class="num">03</span>Manifest Deep Dive</a>
+  <a href="#s4"  class="nav-link"><span class="num">04</span>Decompilation</a>
+  <a href="#s5"  class="nav-link"><span class="num">05</span>Hardcoded Secrets</a>
+  <a href="#s6"  class="nav-link"><span class="num">06</span>Cryptography</a>
+  <a href="#s7"  class="nav-link"><span class="num">07</span>Network &amp; TLS</a>
+  <a href="#s8"  class="nav-link"><span class="num">08</span>Data Storage</a>
+  <a href="#s9"  class="nav-link"><span class="num">09</span>IPC &amp; Components</a>
+  <a href="#s10" class="nav-link"><span class="num">10</span>Obfuscation</a>
+  <a href="#s11" class="nav-link"><span class="num">11</span>Native &amp; .so Files</a>
+  <a href="#s12" class="nav-link"><span class="num">12</span>Third-Party SDKs</a>
+  <a href="#s13" class="nav-link"><span class="num">13</span>Checklist</a>
+</nav>
+
+<!-- MAIN -->
+<main class="main">
+
+<!-- HERO -->
+<header class="hero">
+  <div class="hero-eyebrow">Advanced Techniques — Real Methods That Work</div>
+  <h1>ANDROID<br><span>STATIC ANALYSIS</span></h1>
+  <p class="hero-desc">How a professional reads an APK without running it. What to look for, where it hides, how to interpret what you find, and what a real finding looks like in code.</p>
+  <div class="tool-row">
+    <span class="tool-chip">apktool</span>
+    <span class="tool-chip">jadx</span>
+    <span class="tool-chip">jadx-gui</span>
+    <span class="tool-chip">strings</span>
+    <span class="tool-chip">grep / ripgrep</span>
+    <span class="tool-chip">semgrep</span>
+    <span class="tool-chip">MobSF</span>
+    <span class="tool-chip">apkleaks</span>
+    <span class="tool-chip">objection</span>
+    <span class="tool-chip">ghidra</span>
+    <span class="tool-chip">radare2</span>
+    <span class="tool-chip">binwalk</span>
+    <span class="tool-chip">androguard</span>
+    <span class="tool-chip">nukesec/apkid</span>
+  </div>
+</header>
+
+<div class="content">
+
+<!-- ═══════════ S1: MINDSET ═══════════ -->
+<div class="section" id="s1">
+  <div class="sec-head">
+    <span class="sec-num">01</span>
+    <div>
+      <h2>MINDSET &amp; ENVIRONMENT</h2>
+      <p class="sec-sub">Static analysis is a reading exercise. You are reconstructing intent from compiled artefacts.</p>
+    </div>
+  </div>
+
+  <div class="think">
+    <div class="think-label">// ANALYST THINKING</div>
+    <p>Static analysis means reading the app without executing it. Every APK is an archive of compiled Dalvik bytecode, resource files, and a manifest. My job is to decompose that archive, reconstruct readable code from bytecode, and then read it the way a security-conscious developer would — asking at every point: what could go wrong here, and did the developer account for it?</p>
+    <p>The difference between a junior tester running grep and a senior analyst doing static analysis is that the senior analyst understands <em>why</em> something is a vulnerability, not just that a pattern matched. Pattern matching gets you 40% of findings. Understanding the data flow — where input comes from, how it's transformed, where it ends up — gets you the rest.</p>
+  </div>
+
+  <h3>The Three Questions Static Analysis Answers</h3>
+  <div class="findings">
+    <div class="finding">
+      <div class="f-sev i">Q1</div>
+      <div class="f-body">
+        <div class="f-title">What secrets are baked into the binary?</div>
+        <div class="f-detail">API keys, tokens, credentials, encryption keys, private certificates, Firebase configs, AWS credentials — anything a developer hardcoded because it was convenient. These are the fastest wins in static analysis.</div>
+      </div>
+    </div>
+    <div class="finding">
+      <div class="f-sev i">Q2</div>
+      <div class="f-body">
+        <div class="f-title">How does sensitive data flow through the app?</div>
+        <div class="f-detail">Where does user input enter the app? Is it validated? Is it sanitised before hitting a database query, a file write, or a network call? Taint analysis — manual or automated — answers this. Most logic vulnerabilities live here.</div>
+      </div>
+    </div>
+    <div class="finding">
+      <div class="f-sev i">Q3</div>
+      <div class="f-body">
+        <div class="f-title">What security controls exist and are they implemented correctly?</div>
+        <div class="f-detail">Pinning, root detection, obfuscation, encryption, input validation — every control can be correctly specified but incorrectly implemented. Static analysis lets you read the implementation, not just observe the behaviour.</div>
+      </div>
+    </div>
+  </div>
+
+  <h3>Environment Setup</h3>
+  <div class="cmd-block">
+    <div class="cmd-head">setup — install all tools</div>
+    <div class="cmd-row"><span class="cmd-t">brew install apktool jadx</span><span class="cmd-n">macOS — primary decompile tools</span></div>
+    <div class="cmd-row"><span class="cmd-t">pip install apkleaks androguard --break-system-packages</span><span class="cmd-n">Python analysis tools</span></div>
+    <div class="cmd-row"><span class="cmd-t">brew install ripgrep</span><span class="cmd-n">rg — much faster than grep for large codebases</span></div>
+    <div class="cmd-row"><span class="cmd-t">pip install semgrep --break-system-packages</span><span class="cmd-n">SAST rule engine for Android</span></div>
+    <div class="cmd-row"><span class="cmd-t">docker pull opensecurity/mobile-security-framework-mobsf</span><span class="cmd-n">automated static+dynamic analysis</span></div>
+    <div class="cmd-row"><span class="cmd-t"># Download: Ghidra (NSA), apkid (packing detection)</span><span class="cmd-n">manual download required</span></div>
+  </div>
+</div>
+
+<!-- ═══════════ S2: APK EXTRACTION ═══════════ -->
+<div class="div"></div>
+<div class="section" id="s2">
+  <div class="sec-head">
+    <span class="sec-num">02</span>
+    <div>
+      <h2>APK EXTRACTION &amp; ANATOMY</h2>
+      <p class="sec-sub">Before reading code, understand what you're working with. An APK is a ZIP — but what's inside it tells you a lot before you decompile anything.</p>
+    </div>
+  </div>
+
+  <div class="think">
+    <div class="think-label">// ANALYST THINKING</div>
+    <p>Most testers go straight to jadx. That's a mistake. The first 10 minutes should be spent understanding the app's architecture from its file structure: what native libraries are included, what assets are bundled, what certificates are embedded, whether the app is split into modules. This context shapes everything you look for next.</p>
+  </div>
+
+  <h3>Unpack and Survey</h3>
+  <div class="cmd-block">
+    <div class="cmd-head">initial extraction</div>
+    <div class="cmd-row"><span class="cmd-t">cp target.apk target.zip && unzip target.zip -d raw_apk/</span><span class="cmd-n">APK is just a ZIP — unpack it raw first</span></div>
+    <div class="cmd-row"><span class="cmd-t">find raw_apk/ -type f | sort</span><span class="cmd-n">survey the full file tree — read every filename</span></div>
+    <div class="cmd-row"><span class="cmd-t">find raw_apk/ -name "*.so"</span><span class="cmd-n">native libraries — each one is a separate attack surface</span></div>
+    <div class="cmd-row"><span class="cmd-t">find raw_apk/ -name "*.dex"</span><span class="cmd-n">multiple dex = multidex app — classes2.dex, classes3.dex etc.</span></div>
+    <div class="cmd-row"><span class="cmd-t">find raw_apk/ -name "*.json" -o -name "*.xml" -o -name "*.db"</span><span class="cmd-n">bundled config/data files</span></div>
+    <div class="cmd-row"><span class="cmd-t">find raw_apk/assets/ -type f</span><span class="cmd-n">assets are bundled as-is — may contain keys, configs, DBs</span></div>
+    <div class="cmd-row"><span class="cmd-t">ls raw_apk/lib/</span><span class="cmd-n">native lib architectures: arm64-v8a, armeabi-v7a, x86, x86_64</span></div>
+  </div>
+
+  <h3>What the File Tree Tells You</h3>
+  <div class="findings">
+    <div class="finding">
+      <div class="f-sev c">CRITICAL</div>
+      <div class="f-body">
+        <div class="f-title">Database files (.db) in assets/ or res/</div>
+        <div class="f-detail">A pre-populated SQLite database bundled with the app. Open it with sqlite3 immediately. It may contain seed credentials, API endpoints, user data from development, or encryption keys used to bootstrap the app's local database.</div>
+      </div>
+    </div>
+    <div class="finding">
+      <div class="f-sev c">CRITICAL</div>
+      <div class="f-body">
+        <div class="f-title">.p12, .pem, .bks, .jks, .keystore files</div>
+        <div class="f-detail">A private key or certificate store bundled in the APK. This may be used for mutual TLS authentication against the backend. Extract it with openssl or keytool. If you can find the password (often in source), you can impersonate the app entirely to the backend server.</div>
+      </div>
+    </div>
+    <div class="finding">
+      <div class="f-sev h">HIGH</div>
+      <div class="f-body">
+        <div class="f-title">google-services.json in assets/</div>
+        <div class="f-detail">Contains Firebase project configuration including API keys, project IDs, and sender IDs. Even if the Firebase key itself is restricted, the project ID and configuration reveals backend infrastructure. Check if the Firebase Realtime Database allows unauthenticated reads.</div>
+      </div>
+    </div>
+    <div class="finding">
+      <div class="f-sev h">HIGH</div>
+      <div class="f-body">
+        <div class="f-title">Multiple .dex files (classes2.dex, classes3.dex…)</div>
+        <div class="f-detail">Multidex means the app exceeds the 65,535 method limit. Often indicates a large codebase with many third-party SDKs. Each dex file must be decompiled — jadx handles this automatically but check that all classes are represented in the output.</div>
+      </div>
+    </div>
+    <div class="finding">
+      <div class="f-sev m">MEDIUM</div>
+      <div class="f-body">
+        <div class="f-title">React Native / Flutter / Xamarin indicators</div>
+        <div class="f-detail">index.android.bundle (React Native), libflutter.so + kernel_blob.bin (Flutter), or assemblies/ folder (Xamarin). Each cross-platform framework has a different analysis path. React Native bundles are especially readable — the business logic is often plain JavaScript.</div>
+      </div>
+    </div>
+  </div>
+
+  <h3>Detect Packing, Protection and Framework</h3>
+  <div class="cmd-block">
+    <div class="cmd-head">apkid — fingerprint the APK</div>
+    <div class="cmd-row"><span class="cmd-t">apkid target.apk</span><span class="cmd-n">detect obfuscator, packer, compiler, anti-analysis tricks</span></div>
+  </div>
+
+  <div class="out-block">
+    <div class="out-label">apkid output — what each line means</div>
+    <pre class="out-pre">classes.dex
+  <span class="h">anti_vm : Build.FINGERPRINT check</span>         &lt;-- emulator detection present
+  <span class="h">anti_debug : Debug.isDebuggerConnected</span>     &lt;-- anti-debug check present
+  <span class="y">compiler : dx</span>                              &lt;-- compiled with dx (standard)
+  <span class="p">obfuscator : ProGuard</span>                      &lt;-- ProGuard obfuscation applied
+  
+libapp.so
+  <span class="g">compiler : Flutter</span>                         &lt;-- this is a Flutter app
+  
+  NOTE: Flutter apps store business logic in libapp.so, not classes.dex.
+  You need to extract and analyse the Dart snapshot separately.</pre>
+  </div>
+
+  <h3>Verify APK Signing Certificate</h3>
+  <p class="body">The signing certificate tells you who built the app and whether it matches the legitimate publisher. A repackaged/trojanised APK will have a different certificate.</p>
+  <div class="cmd-block">
+    <div class="cmd-head">certificate analysis</div>
+    <div class="cmd-row"><span class="cmd-t">apksigner verify --verbose --print-certs target.apk</span><span class="cmd-n">verify signature and print cert details</span></div>
+    <div class="cmd-row"><span class="cmd-t">keytool -printcert -jarfile target.apk</span><span class="cmd-n">alternative: print signing cert</span></div>
+    <div class="cmd-row"><span class="cmd-t">openssl pkcs7 -inform DER -print_certs -in raw_apk/META-INF/CERT.RSA</span><span class="cmd-n">read cert directly from META-INF</span></div>
+  </div>
+
+  <div class="out-block">
+    <div class="out-label">What to examine in the certificate output</div>
+    <pre class="out-pre">Signer #1 certificate DN: <span class="y">CN=Android Debug, O=Android, C=US</span>
+                                                    <span class="h">↑ DEBUG CERT IN PRODUCTION — critical</span>
+
+Signer #1 certificate SHA-256: 4e:f0:...
+Signer #1 key size: <span class="h">1024</span>                      &lt;-- RSA-1024 is broken, should be 2048+
+Signer #1 key algorithm: RSA
+
+<span class="c">Legitimate production cert will show the company's CN, not "Android Debug"</span>
+<span class="c">Debug certs mean the APK was never properly release-signed</span></pre>
+  </div>
+</div>
+
+<!-- ═══════════ S3: MANIFEST ═══════════ -->
+<div class="div"></div>
+<div class="section" id="s3">
+  <div class="sec-head">
+    <span class="sec-num">03</span>
+    <div>
+      <h2>MANIFEST DEEP DIVE</h2>
+      <p class="sec-sub">The AndroidManifest.xml is the app's contract with the OS. Every security-relevant configuration decision is declared here.</p>
+    </div>
+  </div>
+
+  <div class="think">
+    <div class="think-label">// ANALYST THINKING</div>
+    <p>The manifest is not just a list of components. It's a security policy document. Every attribute I look at in the manifest is a question: did the developer make a conscious security decision here, or did they just leave the default? Defaults in Android are almost always insecure — exported=true for Activities with an intent filter, allowBackup=true, cleartext traffic permitted, no network security config. I am looking for every place where the developer took the easy path instead of the secure one.</p>
+  </div>
+
+  <h3>Decode the Manifest</h3>
+  <div class="cmd-block">
+    <div class="cmd-head">apktool — decode binary manifest to readable XML</div>
+    <div class="cmd-row"><span class="cmd-t">apktool d target.apk -o decoded/ --no-src</span><span class="cmd-n">decode resources + manifest only, skip smali (faster)</span></div>
+    <div class="cmd-row"><span class="cmd-t">cat decoded/AndroidManifest.xml</span><span class="cmd-n">read the full manifest</span></div>
+    <div class="cmd-row"><span class="cmd-t">apktool d target.apk -o decoded/</span><span class="cmd-n">full decode including smali bytecode</span></div>
+  </div>
+
+  <h3>Application-Level Security Flags</h3>
+  <p class="body">These flags appear on the <code>&lt;application&gt;</code> tag and affect the entire app. Check these first.</p>
+  <div class="cmd-block">
+    <div class="cmd-head">grep — hunt for security-relevant application attributes</div>
+    <div class="cmd-row"><span class="cmd-t">grep -E "android:debuggable|android:allowBackup|android:usesCleartextTraffic|android:networkSecurityConfig|android:requestLegacyExternalStorage|android:exported" decoded/AndroidManifest.xml</span><span class="cmd-n">one-shot — all critical attributes</span></div>
+  </div>
+
+  <div class="findings">
+    <div class="finding">
+      <div class="f-sev c">CRITICAL</div>
+      <div class="f-body">
+        <div class="f-title">android:debuggable="true" on &lt;application&gt;</div>
+        <div class="f-detail">The app accepts JDWP debugger connections from any process with ADB access. In practice: attach Android Studio debugger, set breakpoints anywhere, inspect all live variables including decrypted tokens, call any method. This completely negates all runtime security controls. Should never be in a production build.</div>
+      </div>
+    </div>
+    <div class="finding">
+      <div class="f-sev c">CRITICAL</div>
+      <div class="f-body">
+        <div class="f-title">android:usesCleartextTraffic="true" with no Network Security Config</div>
+        <div class="f-detail">The app is allowed to make plain HTTP connections to any host. Even if all current traffic is HTTPS, this flag means a single developer mistake — one HTTP URL hardcoded anywhere — will send traffic in cleartext. On Android 9+ the default is false; finding true in a production app is a deliberate or careless regression.</div>
+      </div>
+    </div>
+    <div class="finding">
+      <div class="f-sev h">HIGH</div>
+      <div class="f-body">
+        <div class="f-title">android:allowBackup="true" (or absent — default is true pre-API 31)</div>
+        <div class="f-detail">Any device with USB debugging enabled can extract all app data with <code>adb backup</code>. The backup includes SharedPreferences, databases, and files directories — exactly where tokens and credentials live. On API level below 31, the default is true if the attribute is absent — absence is a vulnerability.</div>
+      </div>
+    </div>
+    <div class="finding">
+      <div class="f-sev h">HIGH</div>
+      <div class="f-body">
+        <div class="f-title">No android:networkSecurityConfig attribute</div>
+        <div class="f-detail">Without a Network Security Config file, the app uses platform defaults. On Android 7+ this means no user CA certs trusted (good for pinning), but no custom pinning either. Absence of a network security config means you should check dynamically whether the app performs any pinning at all — it almost certainly doesn't.</div>
+      </div>
+    </div>
+  </div>
+
+  <h3>Network Security Config Analysis</h3>
+  <p class="body">If a Network Security Config file is referenced, read it — it defines exactly which domains are pinned, which CAs are trusted, and whether cleartext is allowed per domain.</p>
+  <div class="cmd-block">
+    <div class="cmd-head">network security config</div>
+    <div class="cmd-row"><span class="cmd-t">cat decoded/res/xml/network_security_config.xml</span><span class="cmd-n">read the NSC file directly</span></div>
+  </div>
+
+  <div class="out-block">
+    <div class="out-label">Vulnerable NSC — pinning configured but with a user-cert trust override</div>
+    <pre class="out-pre">&lt;network-security-config&gt;
+  &lt;base-config&gt;
+    &lt;trust-anchors&gt;
+      &lt;certificates src="system" /&gt;
+      <span class="h">&lt;certificates src="user" /&gt;</span>   &lt;-- user-installed CAs trusted — Burp works without Frida
+    &lt;/trust-anchors&gt;
+  &lt;/base-config&gt;
+
+  &lt;domain-config&gt;
+    &lt;domain includeSubdomains="true"&gt;api.example.com&lt;/domain&gt;
+    &lt;pin-set expiration="2020-01-01"&gt;           <span class="h">&lt;-- EXPIRED PIN SET</span>
+      &lt;pin digest="SHA-256"&gt;AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=&lt;/pin&gt;
+    &lt;/pin-set&gt;
+  &lt;/domain-config&gt;
+
+  <span class="h">&lt;debug-overrides&gt;</span>
+    <span class="h">&lt;trust-anchors&gt;&lt;certificates src="user" /&gt;&lt;/trust-anchors&gt;</span>
+  <span class="h">&lt;/debug-overrides&gt;</span>              &lt;-- debug overrides work on debuggable builds
+&lt;/network-security-config&gt;
+
+<span class="c">Findings from this config:</span>
+<span class="c">1. user cert trust means Burp proxy works without Frida — just install Burp CA</span>
+<span class="c">2. Expired pin-set means pinning is not enforced — Android ignores expired pins</span>
+<span class="c">3. debug-overrides with user trust means debug builds accept any proxy cert</span></pre>
+  </div>
+
+  <h3>Component Enumeration — Every Exported Component is a Finding Candidate</h3>
+  <div class="cmd-block">
+    <div class="cmd-head">grep — component analysis</div>
+    <div class="cmd-row"><span class="cmd-t">grep -n "android:exported=\"true\"" decoded/AndroidManifest.xml</span><span class="cmd-n">explicit exports — all are entry points</span></div>
+    <div class="cmd-row"><span class="cmd-t">grep -n "android:permission" decoded/AndroidManifest.xml</span><span class="cmd-n">what permissions guard each component</span></div>
+    <div class="cmd-row"><span class="cmd-t">grep -n "android:protectionLevel" decoded/AndroidManifest.xml</span><span class="cmd-n">check if custom permissions are normal vs signature</span></div>
+    <div class="cmd-row"><span class="cmd-t">grep -n "intent-filter" decoded/AndroidManifest.xml -A5</span><span class="cmd-n">components with intent filters are implicitly exported on old targetSdk</span></div>
+    <div class="cmd-row"><span class="cmd-t">grep -n "android:scheme" decoded/AndroidManifest.xml</span><span class="cmd-n">custom URI schemes — deep link attack surface</span></div>
+    <div class="cmd-row"><span class="cmd-t">grep -n "android:host\|android:pathPattern\|android:pathPrefix" decoded/AndroidManifest.xml</span><span class="cmd-n">deep link host/path configuration</span></div>
+  </div>
+
+  <div class="callout wa">
+    <span class="callout-icon">⚠</span>
+    <span>On apps with <code>targetSdkVersion</code> below 31, any Activity with an <code>&lt;intent-filter&gt;</code> is <strong>implicitly exported</strong> even without <code>android:exported="true"</code>. Check the targetSdk and apply this rule accordingly. Many legacy apps have accidentally exported Activities this way.</span>
+  </div>
+
+  <h3>Custom Permissions — A Subtle But Important Finding</h3>
+  <div class="out-block">
+    <div class="out-label">Dangerous custom permission configuration</div>
+    <pre class="out-pre">&lt;!-- App defines a custom permission --&gt;
+&lt;permission
+    android:name="com.example.bankapp.TRANSFER_FUNDS"
+    android:protectionLevel="<span class="h">normal</span>" /&gt;        &lt;-- should be "signature"
+
+&lt;!-- Then uses it to guard a sensitive component --&gt;
+&lt;activity android:name=".TransferActivity"
+    android:permission="com.example.bankapp.TRANSFER_FUNDS" /&gt;
+
+<span class="c">Problem: protectionLevel="normal" means ANY app can request this permission</span>
+<span class="c">and the OS will grant it automatically without user confirmation.</span>
+<span class="c">protectionLevel="signature" would restrict it to apps signed by same key.</span>
+<span class="c">This is a permission bypass — any malicious app can call TransferActivity.</span></pre>
+  </div>
+</div>
+
+<!-- ═══════════ S4: DECOMPILATION ═══════════ -->
+<div class="div"></div>
+<div class="section" id="s4">
+  <div class="sec-head">
+    <span class="sec-num">04</span>
+    <div>
+      <h2>DECOMPILATION STRATEGY</h2>
+      <p class="sec-sub">jadx gives you Java. But knowing where to look in thousands of files is the actual skill.</p>
+    </div>
+  </div>
+
+  <div class="think">
+    <div class="think-label">// ANALYST THINKING</div>
+    <p>A medium-sized app has 50,000 to 200,000+ lines of decompiled Java. You cannot read all of it. What you can do is navigate it strategically: find entry points, follow data flows from those entry points, and use grep to surface patterns that reliably indicate vulnerabilities. jadx-gui is useful for exploration; the command line with ripgrep is faster for systematic searching.</p>
+    <p>The class structure itself tells you where the interesting code is. Authentication code lives in classes named Auth, Login, Session, Token. Crypto lives in classes named Cipher, Crypto, Encrypt. Network code lives in Retrofit interfaces and OkHttp interceptors. Read the package structure first — it's a map.</p>
+  </div>
+
+  <h3>Decompile Everything</h3>
+  <div class="cmd-block">
+    <div class="cmd-head">jadx — full decompilation</div>
+    <div class="cmd-row"><span class="cmd-t">jadx -d decompiled/ target.apk</span><span class="cmd-n">decompile to Java — handles multidex automatically</span></div>
+    <div class="cmd-row"><span class="cmd-t">jadx -d decompiled/ target.apk --show-bad-code</span><span class="cmd-n">include partially decompiled code — more coverage</span></div>
+    <div class="cmd-row"><span class="cmd-t">jadx-gui target.apk</span><span class="cmd-n">GUI — good for navigation and cross-references</span></div>
+    <div class="cmd-row"><span class="cmd-t">apktool d target.apk -o smali/</span><span class="cmd-n">also get smali — fallback when jadx fails on obfuscated code</span></div>
+  </div>
+
+  <h3>Read the Package Structure First</h3>
+  <div class="cmd-block">
+    <div class="cmd-head">survey the class structure</div>
+    <div class="cmd-row"><span class="cmd-t">find decompiled/sources/ -name "*.java" | head -100</span><span class="cmd-n">get a sense of package layout</span></div>
+    <div class="cmd-row"><span class="cmd-t">find decompiled/sources/ -type d | sort</span><span class="cmd-n">list all packages — read the directory names</span></div>
+    <div class="cmd-row"><span class="cmd-t">find decompiled/sources/ -name "*.java" | grep -iE 'auth|login|session|token|crypt|cipher|key|secret|pin|password|network|api|http'</span><span class="cmd-n">find high-value class files by name</span></div>
+    <div class="cmd-row"><span class="cmd-t">find decompiled/sources/ -name "*.java" | grep -iE 'BuildConfig|Config|Constants|Keys|Secrets'</span><span class="cmd-n">config/constant files — most likely to have hardcoded values</span></div>
+    <div class="cmd-row"><span class="cmd-t">wc -l decompiled/sources/**/**/*.java | sort -rn | head -20</span><span class="cmd-n">largest files — complex files often contain core business logic</span></div>
+  </div>
+
+  <div class="out-block">
+    <div class="out-label">What a useful package structure looks like — this tells you where to look</div>
+    <pre class="out-pre">decompiled/sources/
+  com/example/bankapp/
+    <span class="g">auth/</span>                    &lt;-- authentication logic — read everything here
+      LoginActivity.java
+      AuthManager.java
+      <span class="y">TokenStorage.java</span>        &lt;-- how tokens are stored — critical
+      SessionManager.java
+    <span class="g">crypto/</span>                  &lt;-- cryptographic operations — check every algorithm
+      AESHelper.java
+      <span class="h">KeyManager.java</span>          &lt;-- where encryption keys come from — check hardcoding
+      RSAUtil.java
+    <span class="g">network/</span>                 &lt;-- network layer — check TLS, pinning, auth headers
+      ApiService.java          &lt;-- Retrofit interface — lists ALL API endpoints
+      <span class="y">NetworkInterceptor.java</span>  &lt;-- request/response interceptor — auth token injection
+      <span class="h">PinningManager.java</span>      &lt;-- SSL pinning implementation — check if bypassable
+    <span class="p">BuildConfig.java</span>         &lt;-- build-time constants — ALWAYS check for secrets
+    <span class="p">Constants.java</span>           &lt;-- app-wide constants — check for hardcoded values</pre>
+  </div>
+
+  <h3>Cross-Reference Navigation in jadx-gui</h3>
+  <p class="body">The most powerful feature of jadx-gui is cross-reference search. Right-click any class, method, or field → <strong>Find Usages</strong>. This lets you trace data flows: find where a method is called, where a field is set, where a class is instantiated.</p>
+
+  <div class="tech-card">
+    <div class="tech-card-title">technique — tracing a token from storage to network request</div>
+    <p class="body" style="margin:0">1. Find <code>TokenStorage.getToken()</code> in jadx-gui<br>
+    2. Right-click → Find Usages → see every place the token is read<br>
+    3. Follow to <code>NetworkInterceptor.intercept()</code> — where it's added to headers<br>
+    4. Check: is the token added to ALL requests or only some? Is it ever logged? Is it stored in SharedPreferences (unencrypted) or EncryptedSharedPreferences?<br>
+    5. Find <code>TokenStorage.saveToken()</code> — trace backward to where tokens come from and how they arrive</p>
+  </div>
+</div>
+
+<!-- ═══════════ S5: HARDCODED SECRETS ═══════════ -->
+<div class="div"></div>
+<div class="section" id="s5">
+  <div class="sec-head">
+    <span class="sec-num">05</span>
+    <div>
+      <h2>HARDCODED SECRETS</h2>
+      <p class="sec-sub">The most reliable finding in mobile pentesting. Developers hardcode secrets constantly — the question is always where they hide them.</p>
+    </div>
+  </div>
+
+  <div class="think">
+    <div class="think-label">// ANALYST THINKING</div>
+    <p>Hardcoded secrets come in two flavours: obvious ones (a string literally called "API_KEY" with its value next to it) and non-obvious ones (a base64-encoded value used in a crypto function with no comment explaining what it is). The obvious ones get found by grep. The non-obvious ones require understanding what the code is doing with the value — is it being passed to a cipher initialisation? Is it being sent in a header? Context transforms a suspicious string into a confirmed vulnerability.</p>
+    <p>Always check BuildConfig.java first. Developers routinely inject API keys, environment flags, and backend URLs through the build system, and everything ends up in BuildConfig. It takes 30 seconds and is the highest-yield file in the entire codebase.</p>
+  </div>
+
+  <h3>BuildConfig — Always Check This First</h3>
+  <div class="cmd-block">
+    <div class="cmd-head">BuildConfig and Constants files</div>
+    <div class="cmd-row"><span class="cmd-t">cat decompiled/sources/com/example/bankapp/BuildConfig.java</span><span class="cmd-n">highest-yield file in any app</span></div>
+    <div class="cmd-row"><span class="cmd-t">find decompiled/ -name "BuildConfig.java" -exec cat {} \;</span><span class="cmd-n">some apps have multiple modules with their own BuildConfig</span></div>
+    <div class="cmd-row"><span class="cmd-t">find decompiled/ -name "Constants.java" -o -name "Config.java" -o -name "Secrets.java" | xargs cat</span><span class="cmd-n">other common secret-holding files</span></div>
+  </div>
+
+  <div class="out-block">
+    <div class="out-label">BuildConfig.java — a goldmine when developers don't know better</div>
+    <pre class="out-pre">public final class BuildConfig {
+    public static final boolean DEBUG = <span class="h">true</span>;        &lt;-- debug build in production
+    public static final String APPLICATION_ID = "com.example.bankapp";
+    public static final String BUILD_TYPE = "release";
+    public static final String FLAVOR = "prod";
+
+    <span class="h">public static final String API_KEY = "REDACTED";</span>
+    <span class="h">public static final String STRIPE_SECRET = "REDACTED";</span>
+    <span class="h">public static final String BASE_URL = "https://internal-api.bankappEXAMPLE.com";</span>
+    <span class="h">public static final String DB_ENCRYPTION_KEY = "MyS3cr3tK3y!2023";</span>
+    <span class="h">public static final String ADMIN_ENDPOINT = "/api/v1/admin/superuser";</span>
+}</pre>
+  </div>
+
+  <h3>Systematic grep — Cover Every Pattern</h3>
+  <div class="cmd-block">
+    <div class="cmd-head">ripgrep — comprehensive secret hunting</div>
+    <div class="cmd-row"><span class="cmd-t">rg -i "api_key|apikey|api_secret|secret_key|access_key|access_token" decompiled/ --type java</span><span class="cmd-n">generic API key patterns</span></div>
+    <div class="cmd-row"><span class="cmd-t">rg -i "password|passwd|pwd" decompiled/ --type java -l</span><span class="cmd-n">list files containing password references</span></div>
+    <div class="cmd-row"><span class="cmd-t">rg "sk_live_|sk_test_|pk_live_" decompiled/</span><span class="cmd-n">Stripe keys — live vs test matters</span></div>
+    <div class="cmd-row"><span class="cmd-t">rg "AIza[0-9A-Za-z\-_]{35}" decompiled/</span><span class="cmd-n">Google API key exact regex pattern</span></div>
+    <div class="cmd-row"><span class="cmd-t">rg "AKIA[0-9A-Z]{16}" decompiled/</span><span class="cmd-n">AWS access key exact regex — very reliable</span></div>
+    <div class="cmd-row"><span class="cmd-t">rg "eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}" decompiled/</span><span class="cmd-n">hardcoded JWT tokens (base64url structure)</span></div>
+    <div class="cmd-row"><span class="cmd-t">rg "BEGIN (RSA |EC |)PRIVATE KEY" decompiled/</span><span class="cmd-n">PEM private keys embedded in source</span></div>
+    <div class="cmd-row"><span class="cmd-t">rg -i "firebase|firestore" decompiled/ --type java | grep -i "key\|secret\|token"</span><span class="cmd-n">Firebase credentials</span></div>
+    <div class="cmd-row"><span class="cmd-t">rg "jdbc:|mongodb://|redis://" decompiled/</span><span class="cmd-n">database connection strings</span></div>
+    <div class="cmd-row"><span class="cmd-t">rg "[0-9a-f]{32,64}" decompiled/ --type java | grep -v "//\|import\|package\|class\|test"</span><span class="cmd-n">hex strings 32+ chars — likely keys or hashes</span></div>
+  </div>
+
+  <h3>String Extraction from the DEX Directly</h3>
+  <p class="body">Sometimes jadx fails to decompile certain classes due to obfuscation. The <code>strings</code> command on the raw DEX extracts all string literals regardless — no decompilation needed.</p>
+  <div class="cmd-block">
+    <div class="cmd-head">raw string extraction from DEX files</div>
+    <div class="cmd-row"><span class="cmd-t">strings raw_apk/classes.dex | grep -iE 'key|secret|token|password|auth' | sort -u</span><span class="cmd-n">extract strings even from obfuscated code</span></div>
+    <div class="cmd-row"><span class="cmd-t">strings raw_apk/classes.dex | grep -E '^https?://' | sort -u</span><span class="cmd-n">all hardcoded URLs — find undocumented endpoints</span></div>
+    <div class="cmd-row"><span class="cmd-t">strings raw_apk/classes.dex | grep -E '[A-Za-z0-9+/]{40,}={0,2}$'</span><span class="cmd-n">long base64 strings — likely encoded keys or certs</span></div>
+    <div class="cmd-row"><span class="cmd-t">strings raw_apk/classes2.dex raw_apk/classes3.dex | sort -u > all_strings.txt</span><span class="cmd-n">aggregate all dex files</span></div>
+    <div class="cmd-row"><span class="cmd-t">apkleaks -f target.apk -o leaks.json</span><span class="cmd-n">automated — runs 100+ regex patterns against DEX strings</span></div>
+  </div>
+
+  <h3>Resources and Asset Files</h3>
+  <div class="cmd-block">
+    <div class="cmd-head">grep — secrets in resource files</div>
+    <div class="cmd-row"><span class="cmd-t">cat decoded/res/values/strings.xml | grep -iE 'key|secret|token|url|endpoint'</span><span class="cmd-n">strings.xml — common place for API URLs and keys</span></div>
+    <div class="cmd-row"><span class="cmd-t">find decoded/res/ decoded/assets/ -name "*.json" | xargs grep -iE 'key|secret|token|password' 2>/dev/null</span><span class="cmd-n">all JSON config files</span></div>
+    <div class="cmd-row"><span class="cmd-t">cat raw_apk/assets/google-services.json</span><span class="cmd-n">Firebase config — check every field</span></div>
+    <div class="cmd-row"><span class="cmd-t">find decoded/assets/ -name "*.js" | xargs grep -iE 'apikey|secret|token|password' 2>/dev/null</span><span class="cmd-n">bundled JS files (React Native / WebView content)</span></div>
+  </div>
+
+  <div class="findings">
+    <div class="finding">
+      <div class="f-sev c">CRITICAL</div>
+      <div class="f-body">
+        <div class="f-title">Live payment gateway key (Stripe sk_live_, Braintree production key)</div>
+        <div class="f-detail">A live Stripe secret key allows anyone who extracts it to create charges, issue refunds, access all customer payment data, and potentially drain the merchant account. This is immediately exploitable with zero additional steps. Rotate the key before the report is even written.</div>
+      </div>
+    </div>
+    <div class="finding">
+      <div class="f-sev c">CRITICAL</div>
+      <div class="f-body">
+        <div class="f-title">AWS access key (AKIA... pattern) with its secret key</div>
+        <div class="f-detail">An AWS key pair allows authenticated API calls to AWS services. Run <code>aws sts get-caller-identity</code> to confirm validity, then <code>aws iam list-attached-user-policies</code> to see what it can do. S3 buckets, EC2 instances, Lambda functions, RDS databases — all potentially accessible depending on the IAM role.</div>
+      </div>
+    </div>
+    <div class="finding">
+      <div class="f-sev c">CRITICAL</div>
+      <div class="f-body">
+        <div class="f-title">Database encryption key hardcoded (SQLCipher, Room encryption)</div>
+        <div class="f-detail">The app encrypts its local database but the key is a hardcoded string in BuildConfig or a Constants class. Extract the APK, extract the key, pull the encrypted database from a device, decrypt it with SQLCipher using the extracted key. Encryption provides zero protection when the key is in the binary.</div>
+      </div>
+    </div>
+    <div class="finding">
+      <div class="f-sev h">HIGH</div>
+      <div class="f-body">
+        <div class="f-title">Undocumented backend endpoints in URL strings</div>
+        <div class="f-detail">URLs like /api/v1/admin/users, /internal/debug/tokens, /api/v1/export/all_users found in strings but never exercised by the app's normal UI. Call them directly from Burp. Admin endpoints frequently lack proper authorisation checks when accessed directly because they assume they'll only be reached through an admin dashboard.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ S6: CRYPTOGRAPHY ═══════════ -->
+<div class="div"></div>
+<div class="section" id="s6">
+  <div class="sec-head">
+    <span class="sec-num">06</span>
+    <div>
+      <h2>CRYPTOGRAPHY ANALYSIS</h2>
+      <p class="sec-sub">Correct algorithm, wrong implementation. Most crypto findings are not "they used MD5" but "they used AES incorrectly."</p>
+    </div>
+  </div>
+
+  <div class="think">
+    <div class="think-label">// ANALYST THINKING</div>
+    <p>Crypto findings are the most technically nuanced in mobile pentesting. There are three categories: wrong algorithm (MD5 for hashing passwords — this is broken by design), right algorithm wrong mode (AES/ECB — deterministic encryption, pattern-preserving), and right algorithm right mode wrong parameters (AES/CBC with static IV — deterministic, forgeable). Each requires a different explanation to the developer and carries different impact.</p>
+    <p>The key questions for any cryptographic operation are: where does the key come from? Is the IV random or static? Is the output authenticated (AEAD) or just encrypted (no integrity)? Unauthenticated encryption is vulnerable to bit-flipping attacks.</p>
+  </div>
+
+  <h3>Find Cryptographic Operations</h3>
+  <div class="cmd-block">
+    <div class="cmd-head">locate all crypto usage in source</div>
+    <div class="cmd-row"><span class="cmd-t">rg "Cipher.getInstance|MessageDigest.getInstance|Mac.getInstance|KeyGenerator.getInstance" decompiled/ --type java -l</span><span class="cmd-n">find all files using crypto APIs</span></div>
+    <div class="cmd-row"><span class="cmd-t">rg "Cipher.getInstance" decompiled/ --type java -B2 -A8</span><span class="cmd-n">show context around each Cipher.getInstance call</span></div>
+    <div class="cmd-row"><span class="cmd-t">rg "MessageDigest.getInstance" decompiled/ --type java -A3</span><span class="cmd-n">find hashing — look for MD5 and SHA1</span></div>
+    <div class="cmd-row"><span class="cmd-t">rg "SecretKeySpec|SecretKey|KeySpec" decompiled/ --type java -B2 -A6</span><span class="cmd-n">key construction — where does the key material come from?</span></div>
+    <div class="cmd-row"><span class="cmd-t">rg "IvParameterSpec" decompiled/ --type java -B3 -A5</span><span class="cmd-n">IV construction — is it random or static?</span></div>
+    <div class="cmd-row"><span class="cmd-t">rg "Random\(\)|new Random" decompiled/ --type java</span><span class="cmd-n">java.util.Random used for security — not cryptographically secure</span></div>
+    <div class="cmd-row"><span class="cmd-t">rg "SecureRandom" decompiled/ --type java -A3</span><span class="cmd-n">SecureRandom — verify it's seeded properly and not seeded with time</span></div>
+  </div>
+
+  <h3>Reading a Cipher Call — What to Check</h3>
+
+  <div class="out-block">
+    <div class="out-label">Static IV — the most common crypto finding in Android apps</div>
+    <pre class="out-pre">public class AESHelper {
+    <span class="h">private static final byte[] IV = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};</span>
+    <span class="h">private static final String KEY = "MyHardcodedKey!!";</span>
+
+    public byte[] encrypt(String plaintext) {
+        SecretKeySpec keySpec = new SecretKeySpec(
+            <span class="h">KEY.getBytes("UTF-8")</span>,    &lt;-- key derived from hardcoded string
+            "AES"
+        );
+        Cipher cipher = Cipher.getInstance("<span class="h">AES/CBC/PKCS5Padding</span>");
+        cipher.init(Cipher.ENCRYPT_MODE, keySpec,
+            new IvParameterSpec(<span class="h">IV</span>));  &lt;-- static all-zero IV
+        return cipher.doFinal(plaintext.getBytes());
+    }
+}
+
+<span class="c">Findings:</span>
+<span class="c">1. Static IV: same plaintext always produces same ciphertext — attacker can detect patterns</span>
+<span class="c">2. Static IV with CBC: IV must be secret for CBC to be secure — here it's all zeros, public</span>
+<span class="c">3. Hardcoded key: AES key material is the hardcoded string, extractable from the APK</span>
+<span class="c">4. No authentication: CBC without MAC is vulnerable to padding oracle and bit-flip attacks</span>
+<span class="c">Correct approach: AES/GCM/NoPadding with random IV, key from Android Keystore</span></pre>
+  </div>
+
+  <div class="out-block">
+    <div class="out-label">ECB mode — patterns preserved in ciphertext</div>
+    <pre class="out-pre">Cipher cipher = Cipher.getInstance("<span class="h">AES/ECB/PKCS5Padding</span>");
+<span class="c">// ECB encrypts each 16-byte block independently with the same key.</span>
+<span class="c">// Identical plaintext blocks produce identical ciphertext blocks.</span>
+<span class="c">// For data with repeating patterns (user IDs, account numbers),</span>
+<span class="c">// an attacker can infer relationships between records without decrypting.</span>
+<span class="c">// The "ECB penguin" — encrypt a bitmap with AES-ECB and you can still see the image.</span>
+<span class="c">// This is never acceptable for any security purpose.</span></pre>
+  </div>
+
+  <div class="out-block">
+    <div class="out-label">Password hashing — the wrong and right way</div>
+    <pre class="out-pre"><span class="c">// WRONG — found in the wild regularly:</span>
+MessageDigest md = MessageDigest.getInstance("<span class="h">MD5</span>");
+String hash = bytesToHex(md.digest(password.getBytes()));
+<span class="c">// MD5 is broken: collisions trivially found, rainbow tables exist for every common password</span>
+
+<span class="c">// ALSO WRONG:</span>
+MessageDigest sha = MessageDigest.getInstance("<span class="h">SHA-1</span>");
+<span class="c">// SHA-1 collision attacks demonstrated (SHAttered, 2017). Deprecated for all security use.</span>
+
+<span class="c">// STILL WRONG — even SHA-256 is wrong for password hashing:</span>
+MessageDigest sha256 = MessageDigest.getInstance("<span class="h">SHA-256</span>");
+<span class="c">// SHA-256 is fast — GPUs can compute billions per second. No salt here either.</span>
+<span class="c">// CORRECT: bcrypt, scrypt, or Argon2 — slow by design, resistant to GPU attacks</span>
+
+<span class="g">// CORRECT — what you want to see:</span>
+<span class="g">// Server-side bcrypt/Argon2, never hash passwords client-side</span>
+<span class="g">// Or: Android Keystore backed key derivation for local authentication</span></pre>
+  </div>
+
+  <h3>Android Keystore — Correct vs Incorrect Usage</h3>
+  <p class="body">The Android Keystore is the right place to store cryptographic keys. But it can still be misused. Check how the app creates and uses Keystore-backed keys.</p>
+
+  <div class="cmd-block">
+    <div class="cmd-head">find Keystore usage</div>
+    <div class="cmd-row"><span class="cmd-t">rg "KeyStore\|AndroidKeyStore\|KeyPairGenerator\|KeyGenParameterSpec" decompiled/ --type java -l</span><span class="cmd-n">files using the Android Keystore</span></div>
+    <div class="cmd-row"><span class="cmd-t">rg "setUserAuthenticationRequired\|setUnlockedDeviceRequired\|setInvalidatedByBiometricEnrollment" decompiled/ --type java -A2</span><span class="cmd-n">check if key is bound to user authentication</span></div>
+  </div>
+
+  <div class="out-block">
+    <div class="out-label">Keystore key created without user authentication binding — weaker than intended</div>
+    <pre class="out-pre">KeyGenParameterSpec spec = new KeyGenParameterSpec.Builder(
+    "my_key_alias",
+    KeyProperties.PURPOSE_ENCRYPT | KeyProperties.PURPOSE_DECRYPT)
+    .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+    .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+    <span class="h">// Missing: .setUserAuthenticationRequired(true)</span>
+    <span class="h">// Without this, key is usable by the app even if the device is unlocked by anyone</span>
+    <span class="h">// Key survives screen lock — no biometric/PIN required to use it</span>
+    .build();
+
+<span class="c">Impact: on a stolen unlocked device, the attacker can decrypt stored data</span>
+<span class="c">without needing to authenticate. The Keystore provides storage security</span>
+<span class="c">but not authentication-gating without setUserAuthenticationRequired(true).</span></pre>
+  </div>
+</div>
+
+<!-- ═══════════ S7: NETWORK & TLS ═══════════ -->
+<div class="div"></div>
+<div class="section" id="s7">
+  <div class="sec-head">
+    <span class="sec-num">07</span>
+    <div>
+      <h2>NETWORK &amp; TLS CONFIGURATION</h2>
+      <p class="sec-sub">SSL pinning in source code is not the same as SSL pinning that works. Read the implementation, not just whether it exists.</p>
+    </div>
+  </div>
+
+  <div class="think">
+    <div class="think-label">// ANALYST THINKING</div>
+    <p>Finding a class named PinningManager or CertificatePinner doesn't mean pinning works. I've seen apps where pinning is declared in a method that's never called. I've seen apps where the pinner is initialised with the wrong hostname. I've seen apps where the pin matches a certificate that's already expired. And I've seen apps where pinning exists but there's an empty catch block swallowing the SSLHandshakeException — so pinning failure is silently ignored and the request proceeds anyway.</p>
+    <p>The rule: always verify pinning implementation by reading the code end-to-end. Where is the pinner created? Where is it attached to the HTTP client? What happens when pin validation fails?</p>
+  </div>
+
+  <h3>Find and Analyse the Network Layer</h3>
+  <div class="cmd-block">
+    <div class="cmd-head">locate network configuration</div>
+    <div class="cmd-row"><span class="cmd-t">rg "OkHttpClient|Retrofit|HttpURLConnection|HttpsURLConnection" decompiled/ --type java -l</span><span class="cmd-n">find files building HTTP clients</span></div>
+    <div class="cmd-row"><span class="cmd-t">rg "CertificatePinner|TrustManager|SSLContext|HostnameVerifier" decompiled/ --type java -l</span><span class="cmd-n">TLS configuration files</span></div>
+    <div class="cmd-row"><span class="cmd-t">rg "CertificatePinner" decompiled/ --type java -B5 -A20</span><span class="cmd-n">full pinning implementation with context</span></div>
+    <div class="cmd-row"><span class="cmd-t">rg "HttpsURLConnection" decompiled/ --type java -A10</span><span class="cmd-n">older connection style — check for custom TrustManagers</span></div>
+  </div>
+
+  <h3>The Broken TrustManager — Most Critical TLS Finding</h3>
+
+  <div class="out-block">
+    <div class="out-label">Trust-all TrustManager — accepts every certificate including expired, self-signed, and attacker-controlled</div>
+    <pre class="out-pre">TrustManager[] trustAllCerts = new TrustManager[]{
+    new X509TrustManager() {
+        &#64;Override
+        public void checkClientTrusted(X509Certificate[] chain, String authType) {
+            <span class="h">// empty — accepts everything</span>
+        }
+
+        &#64;Override
+        public void checkServerTrusted(X509Certificate[] chain, String authType) {
+            <span class="h">// empty — accepts everything</span>
+        }
+
+        &#64;Override
+        public X509Certificate[] getAcceptedIssuers() {
+            <span class="h">return new X509Certificate[]{};</span>
+        }
+    }
+};
+
+SSLContext sc = SSLContext.getInstance("SSL");
+sc.init(null, <span class="h">trustAllCerts</span>, new java.security.SecureRandom());
+HttpsURLConnection.setDefaultSSLSocketFactory(sc.getSocketFactory());
+
+<span class="h">HttpsURLConnection.setDefaultHostnameVerifier(</span>
+<span class="h">    (hostname, session) -> true);</span>   &lt;-- also accepts any hostname
+
+<span class="c">This is the worst possible TLS configuration. The app accepts any certificate</span>
+<span class="c">from any CA for any hostname. A basic MiTM on the same network intercepts</span>
+<span class="c">ALL traffic with no tools beyond a self-signed cert and a proxy.</span>
+<span class="c">This code often appears as a "temporary fix" that got shipped to production.</span></pre>
+  </div>
+
+  <div class="out-block">
+    <div class="out-label">Pinning that exists but is silently bypassed on failure</div>
+    <pre class="out-pre">try {
+    CertificatePinner pinner = new CertificatePinner.Builder()
+        .add("api.example.com", "sha256/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")
+        .build();
+    client = new OkHttpClient.Builder()
+        .certificatePinner(pinner)
+        .build();
+} catch (<span class="h">Exception e</span>) {
+    <span class="h">// TODO: fix this</span>
+    <span class="h">client = new OkHttpClient.Builder().build();</span>  &lt;-- fallback: no pinning
+    Log.e("SSL", "Pinning setup failed", e);
+}
+
+<span class="c">If CertificatePinner construction fails for any reason — wrong pin format,</span>
+<span class="c">class not found, any exception — the app falls back to an unpinned client.</span>
+<span class="c">This is pinning that can be bypassed by any error during initialisation.</span></pre>
+  </div>
+
+  <h3>Retrofit Interface — API Surface Discovery</h3>
+  <p class="body">Retrofit interfaces are a complete map of the backend API. Every endpoint the app uses is declared here with its method, path, headers, and parameter names. This is one of the highest-value files in the entire codebase.</p>
+
+  <div class="cmd-block">
+    <div class="cmd-head">find and read Retrofit interfaces</div>
+    <div class="cmd-row"><span class="cmd-t">rg "&#64;GET|&#64;POST|&#64;PUT|&#64;DELETE|&#64;PATCH" decompiled/ --type java -l</span><span class="cmd-n">find all Retrofit interface files</span></div>
+    <div class="cmd-row"><span class="cmd-t">rg "&#64;GET|&#64;POST|&#64;PUT|&#64;DELETE|&#64;PATCH|&#64;Header|&#64;Path|&#64;Query|&#64;Body" decompiled/ --type java -B1 -A3</span><span class="cmd-n">full endpoint declarations with parameters</span></div>
+    <div class="cmd-row"><span class="cmd-t">rg "&#64;Header\|&#64;Headers" decompiled/ --type java -A3</span><span class="cmd-n">hardcoded request headers — API keys often here</span></div>
+  </div>
+
+  <div class="out-block">
+    <div class="out-label">Retrofit interface — complete API map extracted statically</div>
+    <pre class="out-pre">public interface ApiService {
+    &#64;GET("api/v1/users/{userId}/profile")
+    Call&lt;UserProfile&gt; getProfile(&#64;Path("userId") int userId);
+    <span class="c">// Test: change userId in Burp — IDOR if you can access other users' profiles</span>
+
+    &#64;GET("<span class="h">api/v1/admin/users/export</span>")
+    <span class="h">&#64;Headers("X-Admin-Key: hardcoded-admin-key-here")</span>
+    Call&lt;List&lt;User&gt;&gt; exportAllUsers();
+    <span class="c">// Hardcoded admin key in header — extractable, reusable without auth</span>
+
+    &#64;POST("api/v1/transfer")
+    Call&lt;TransferResult&gt; transfer(
+        &#64;Query("to") String recipient,    <span class="c">// sensitive data in query string — appears in logs</span>
+        &#64;Query("amount") double amount,
+        &#64;Header("Authorization") String token
+    );
+
+    &#64;GET("<span class="h">api/v1/debug/tokens</span>")
+    Call&lt;DebugInfo&gt; getDebugTokens();   <span class="h">// debug endpoint never removed</span>
+}</pre>
+  </div>
+
+  <h3>Interceptors — Where Auth Tokens Are Injected</h3>
+  <div class="cmd-block">
+    <div class="cmd-head">find OkHttp interceptors</div>
+    <div class="cmd-row"><span class="cmd-t">rg "Interceptor\|addInterceptor\|addNetworkInterceptor" decompiled/ --type java -l</span><span class="cmd-n">find interceptor usage</span></div>
+    <div class="cmd-row"><span class="cmd-t">rg "class.*implements.*Interceptor" decompiled/ --type java -A30</span><span class="cmd-n">read the full interceptor implementation</span></div>
+  </div>
+
+  <div class="out-block">
+    <div class="out-label">Auth interceptor — where to find how the token reaches requests</div>
+    <pre class="out-pre">public class AuthInterceptor implements Interceptor {
+    private final TokenStorage tokenStorage;
+
+    &#64;Override
+    public Response intercept(Chain chain) throws IOException {
+        String token = tokenStorage.getToken();
+
+        if (token != null) {
+            Request request = chain.request().newBuilder()
+                .addHeader("Authorization", "Bearer " + token)
+                .build();
+            return chain.proceed(request);
+        }
+
+        <span class="h">// If no token, proceeds without auth header</span>
+        <span class="h">return chain.proceed(chain.request());</span>
+        <span class="c">// Question: does the server properly reject unauthenticated requests,</span>
+        <span class="c">// or does it return data anyway? Test in Burp — remove the Auth header</span>
+        <span class="c">// and see if the response changes. If not — broken authentication.</span>
+    }
+}</pre>
+  </div>
+</div>
+
+<!-- ═══════════ S8: DATA STORAGE ═══════════ -->
+<div class="div"></div>
+<div class="section" id="s8">
+  <div class="sec-head">
+    <span class="sec-num">08</span>
+    <div>
+      <h2>DATA STORAGE ANALYSIS</h2>
+      <p class="sec-sub">How the app handles sensitive data at rest. Reading the code tells you what's stored before you pull a single file from a device.</p>
+    </div>
+  </div>
+
+  <div class="think">
+    <div class="think-label">// ANALYST THINKING</div>
+    <p>In static analysis, I'm looking for two things in storage code: what is being stored, and is it being stored securely? SharedPreferences without EncryptedSharedPreferences for anything sensitive is a finding. Writing to external storage (anything under /sdcard/) for anything sensitive is a finding. Using MODE_WORLD_READABLE or MODE_WORLD_WRITEABLE on file operations is a critical finding. Logging sensitive data to files — which then get included in bug reports — is a finding.</p>
+  </div>
+
+  <div class="cmd-block">
+    <div class="cmd-head">find storage operations</div>
+    <div class="cmd-row"><span class="cmd-t">rg "getSharedPreferences|SharedPreferences|PreferenceManager" decompiled/ --type java -l</span><span class="cmd-n">SharedPreferences usage</span></div>
+    <div class="cmd-row"><span class="cmd-t">rg "\.putString\|\.putInt\|\.putBoolean" decompiled/ --type java -B5</span><span class="cmd-n">what values are being stored — read the key names</span></div>
+    <div class="cmd-row"><span class="cmd-t">rg "EncryptedSharedPreferences\|MasterKey\|MasterKeys" decompiled/ --type java</span><span class="cmd-n">check if encrypted prefs are used — absence is a finding</span></div>
+    <div class="cmd-row"><span class="cmd-t">rg "openFileOutput\|FileOutputStream\|FileWriter" decompiled/ --type java -B3 -A5</span><span class="cmd-n">file write operations — what mode and where</span></div>
+    <div class="cmd-row"><span class="cmd-t">rg "MODE_WORLD_READABLE\|MODE_WORLD_WRITEABLE" decompiled/ --type java</span><span class="cmd-n">world-readable files — any app can read these</span></div>
+    <div class="cmd-row"><span class="cmd-t">rg "getExternalStorage\|getExternalFilesDir\|Environment.getExternal" decompiled/ --type java -A5</span><span class="cmd-n">external storage writes — readable without root</span></div>
+    <div class="cmd-row"><span class="cmd-t">rg "Log\.d\|Log\.v\|Log\.i\|Log\.e" decompiled/ --type java | grep -iE 'password|token|key|user|account|card'</span><span class="cmd-n">sensitive data in log statements</span></div>
+  </div>
+
+  <div class="out-block">
+    <div class="out-label">Insecure storage patterns — what a vulnerable implementation looks like</div>
+    <pre class="out-pre"><span class="c">// Pattern 1: Token stored in plain SharedPreferences</span>
+SharedPreferences prefs = getSharedPreferences("AppPrefs", MODE_PRIVATE);
+prefs.edit()
+    <span class="h">.putString("auth_token", token)</span>      &lt;-- plaintext token on disk
+    <span class="h">.putString("user_password", password)</span> &lt;-- never store this
+    .apply();
+
+<span class="c">// Pattern 2: Sensitive file written with wrong mode</span>
+FileOutputStream fos = openFileOutput("session.dat",
+    <span class="h">Context.MODE_WORLD_READABLE</span>);         &lt;-- any app can read this file
+
+<span class="c">// Pattern 3: PII written to external storage</span>
+File file = new File(
+    <span class="h">Environment.getExternalStorageDirectory()</span>,  &lt;-- /sdcard/ — no root needed
+    "user_data.json");
+<span class="h">FileWriter fw = new FileWriter(file);</span>
+fw.write(userDataJson);                        &lt;-- PII written to public storage
+
+<span class="c">// Pattern 4: Credentials in Log</span>
+<span class="h">Log.d("Auth", "Login success: user=" + username + " pass=" + password);</span>
+<span class="c">// This appears in logcat AND in crash reports sent to Firebase/Crashlytics</span></pre>
+  </div>
+
+  <div class="findings">
+    <div class="finding">
+      <div class="f-sev c">CRITICAL</div>
+      <div class="f-body">
+        <div class="f-title">Password stored in SharedPreferences (even MODE_PRIVATE)</div>
+        <div class="f-detail">MODE_PRIVATE prevents other apps from reading it on non-rooted devices. But on any rooted device, ADB backup (if allowBackup=true), or via content provider vulnerabilities, the file is accessible. Passwords should never be stored — only tokens that can be revoked.</div>
+      </div>
+    </div>
+    <div class="finding">
+      <div class="f-sev h">HIGH</div>
+      <div class="f-body">
+        <div class="f-title">Auth token in SharedPreferences without EncryptedSharedPreferences</div>
+        <div class="f-detail">Android Jetpack Security's EncryptedSharedPreferences wraps SharedPreferences with AES-256-GCM encryption backed by the Android Keystore. Finding a token stored in plain SharedPreferences instead means the token is in plaintext XML on disk — extractable by root, ADB backup, or a content provider bug.</div>
+      </div>
+    </div>
+    <div class="finding">
+      <div class="f-sev h">HIGH</div>
+      <div class="f-body">
+        <div class="f-title">Sensitive data logged via Log.d/v/i that ships to crash reporting</div>
+        <div class="f-detail">Debug log calls that include tokens, passwords, or PII are included in crash reports sent to Firebase Crashlytics, Sentry, or similar. This means the data reaches the developer's crash reporting dashboard — a third-party service — without the user's awareness. Check the crash reporting SDK configuration for what gets included.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ S9: IPC & COMPONENTS ═══════════ -->
+<div class="div"></div>
+<div class="section" id="s9">
+  <div class="sec-head">
+    <span class="sec-num">09</span>
+    <div>
+      <h2>IPC &amp; COMPONENT SECURITY</h2>
+      <p class="sec-sub">Reading the code behind exported components reveals whether the developer intended to export them — and whether the logic is safe when called externally.</p>
+    </div>
+  </div>
+
+  <div class="think">
+    <div class="think-label">// ANALYST THINKING</div>
+    <p>Finding an exported component in the manifest is step one. Step two is reading its source code to understand what it does when called externally. An exported Activity that just shows a help screen is low risk. An exported Activity that reads the user_id from the intent and loads that user's data without verifying the caller is authorised to view that user — that's critical. The manifest tells you which doors are open; the source tells you what's in the room behind each door.</p>
+  </div>
+
+  <h3>Tracing an Exported Activity — Full Code Review</h3>
+  <div class="cmd-block">
+    <div class="cmd-head">find and read Activity source for exported components</div>
+    <div class="cmd-row"><span class="cmd-t">grep "android:exported=\"true\"" decoded/AndroidManifest.xml | grep "activity"</span><span class="cmd-n">list exported activities from manifest</span></div>
+    <div class="cmd-row"><span class="cmd-t">find decompiled/ -name "AdminPanelActivity.java" | xargs cat</span><span class="cmd-n">read the full source of each exported Activity</span></div>
+    <div class="cmd-row"><span class="cmd-t">rg "getIntent\(\)\|getStringExtra\|getIntExtra\|getData\(\)" decompiled/ --type java -B3 -A8</span><span class="cmd-n">intent data consumption — input from external callers</span></div>
+    <div class="cmd-row"><span class="cmd-t">rg "isLoggedIn\|isAuthenticated\|checkAuth\|getCurrentUser\(\)" decompiled/ --type java -B5</span><span class="cmd-n">auth checks — are they called before sensitive operations?</span></div>
+  </div>
+
+  <div class="out-block">
+    <div class="out-label">Exported Activity with authentication bypass — reading the vulnerability in source</div>
+    <pre class="out-pre">public class AccountDetailsActivity extends AppCompatActivity {
+
+    &#64;Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_account_details);
+
+        <span class="h">// No authentication check before loading data</span>
+        <span class="h">// SessionManager.isLoggedIn() is never called</span>
+
+        int accountId = getIntent().getIntExtra("<span class="h">account_id</span>", -1);
+        <span class="c">// account_id is taken from the intent — attacker controls this</span>
+
+        AccountRepository repo = new AccountRepository();
+        Account account = repo.getAccountById(accountId);
+        <span class="c">// No check: does the current user own account #accountId?</span>
+        <span class="c">// Any caller can pass any account_id and see any account's details</span>
+
+        displayAccountDetails(account);
+    }
+}
+
+<span class="c">Two vulnerabilities:</span>
+<span class="c">1. No auth check: activity opens without login (auth bypass)</span>
+<span class="c">2. No ownership check: any account_id returns that account's data (IDOR)</span>
+<span class="c">Exploit: am start -n com.bankapp/.AccountDetailsActivity --ei account_id 1</span></pre>
+  </div>
+
+  <h3>Content Provider SQL Injection — Reading the Query Method</h3>
+
+  <div class="cmd-block">
+    <div class="cmd-head">find Content Provider implementation</div>
+    <div class="cmd-row"><span class="cmd-t">rg "extends ContentProvider" decompiled/ --type java -l</span><span class="cmd-n">find ContentProvider subclasses</span></div>
+    <div class="cmd-row"><span class="cmd-t">find decompiled/ -name "*Provider*.java" | xargs cat</span><span class="cmd-n">read every provider source file</span></div>
+    <div class="cmd-row"><span class="cmd-t">rg "public Cursor query" decompiled/ --type java -A25</span><span class="cmd-n">read query method — where injection lives</span></div>
+  </div>
+
+  <div class="out-block">
+    <div class="out-label">SQL injection in a Content Provider — source-level proof of vulnerability</div>
+    <pre class="out-pre">&#64;Override
+public Cursor query(Uri uri, String[] projection, String selection,
+                    String[] selectionArgs, String sortOrder) {
+
+    SQLiteDatabase db = dbHelper.getReadableDatabase();
+
+    <span class="h">// VULNERABLE: selection string from caller interpolated directly into SQL</span>
+    String sql = "SELECT * FROM users WHERE " + <span class="h">selection</span>;
+    <span class="h">return db.rawQuery(sql, null);</span>
+
+    <span class="c">// The selection parameter is the WHERE clause content.</span>
+    <span class="c">// An external caller passes: "1=1 UNION SELECT name,sql,3,4,5 FROM sqlite_master--"</span>
+    <span class="c">// Resulting query: SELECT * FROM users WHERE 1=1 UNION SELECT name,sql,...</span>
+    <span class="c">// This dumps the entire database schema, then any table content.</span>
+
+    <span class="g">// CORRECT: use parametrised query</span>
+    <span class="g">// return db.query("users", projection, selection, selectionArgs, null, null, sortOrder);</span>
+    <span class="c">// The selectionArgs parameter safely binds values — no injection possible.</span>
+}</pre>
+  </div>
+
+  <h3>Deep Link Handler — Input Validation Analysis</h3>
+  <div class="cmd-block">
+    <div class="cmd-head">find deep link handling</div>
+    <div class="cmd-row"><span class="cmd-t">rg "getIntent\(\)\.getData\|Uri\.parse\|intent\.getScheme\|intent\.getHost\|intent\.getPath" decompiled/ --type java -B3 -A15</span><span class="cmd-n">deep link data extraction code</span></div>
+    <div class="cmd-row"><span class="cmd-t">rg "android:scheme\|android:host\|android:pathPattern" decoded/AndroidManifest.xml</span><span class="cmd-n">what URIs does the app register?</span></div>
+  </div>
+
+  <div class="out-block">
+    <div class="out-label">Deep link handler with no origin validation — open redirect and parameter injection</div>
+    <pre class="out-pre">&#64;Override
+protected void onNewIntent(Intent intent) {
+    super.onNewIntent(intent);
+    Uri data = intent.getData();
+
+    if (data != null) {
+        String action = data.getQueryParameter("action");
+        String target = data.getQueryParameter(<span class="h">"redirect_url"</span>);
+
+        if ("login".equals(action)) {
+            String token = data.getQueryParameter("token");
+            <span class="h">sessionManager.loginWithToken(token);</span>  &lt;-- accepts token from deep link!
+            <span class="c">// Attacker crafts: bankapp://auth?action=login&amp;token=STOLEN_TOKEN</span>
+            <span class="c">// Clicking a link triggers account takeover</span>
+        }
+
+        if (target != null) {
+            <span class="h">webView.loadUrl(target);</span>   &lt;-- open redirect via WebView
+            <span class="c">// bankapp://view?redirect_url=javascript:alert(1)</span>
+            <span class="c">// If WebView has JavaScript enabled + addJavascriptInterface: RCE</span>
+        }
+    }
+}</pre>
+  </div>
+</div>
+
+<!-- ═══════════ S10: OBFUSCATION ═══════════ -->
+<div class="div"></div>
+<div class="section" id="s10">
+  <div class="sec-head">
+    <span class="sec-num">10</span>
+    <div>
+      <h2>OBFUSCATION &amp; ANTI-ANALYSIS</h2>
+      <p class="sec-sub">ProGuard renames classes. It does not protect logic. Understanding what obfuscation does — and doesn't — do is what separates a blocked tester from one who gets through.</p>
+    </div>
+  </div>
+
+  <div class="think">
+    <div class="think-label">// ANALYST THINKING</div>
+    <p>Obfuscation is a speed bump, not a wall. ProGuard and R8 rename classes to single letters (a.b.c.d) and remove dead code. They do not encrypt logic, remove strings, or protect algorithms. The code is still there — it's just harder to navigate. My approach: ignore the obfuscated names entirely and find my way by searching for string patterns and API calls that cannot be obfuscated because they're defined by Android or Java itself.</p>
+    <p>Framework API calls like Cipher.getInstance(), SharedPreferences.putString(), and OkHttpClient.Builder() can never be obfuscated because the Android runtime must find them by name. These are my anchors — I find the security-relevant API calls and work outward from there.</p>
+  </div>
+
+  <h3>Navigating Obfuscated Code</h3>
+  <div class="cmd-block">
+    <div class="cmd-head">strategies for obfuscated codebases</div>
+    <div class="cmd-row"><span class="cmd-t">rg "Cipher.getInstance\|MessageDigest.getInstance\|KeyStore.getInstance" decompiled/ --type java -B5 -A15</span><span class="cmd-n">framework calls can't be obfuscated — anchor points</span></div>
+    <div class="cmd-row"><span class="cmd-t">rg "\"AES\|\"RSA\|\"SHA\|\"MD5\|\"HmacSHA" decompiled/ --type java -B3 -A10</span><span class="cmd-n">algorithm name strings — always in plaintext</span></div>
+    <div class="cmd-row"><span class="cmd-t">rg "putString\|getString\|getSharedPreferences" decompiled/ --type java -B3 -A5</span><span class="cmd-n">storage API calls with surrounding context</span></div>
+    <div class="cmd-row"><span class="cmd-t">cat decoded/proguard_rules.pro 2>/dev/null || cat decoded/proguard-rules.pro 2>/dev/null</span><span class="cmd-n">read ProGuard rules — reveals what's kept unobfuscated</span></div>
+    <div class="cmd-row"><span class="cmd-t">find decoded/ -name "mapping.txt"</span><span class="cmd-n">ProGuard mapping file — if included, deobfuscates everything</span></div>
+  </div>
+
+  <div class="callout ti">
+    <span class="callout-icon">✔</span>
+    <span>If you find a <strong>mapping.txt</strong> file inside the APK or decoded directory, the developer accidentally included the ProGuard deobfuscation map. Load it into jadx-gui (File → Load ProGuard mappings) and all obfuscated names are instantly restored to their original form. This happens more than you'd expect.</span>
+  </div>
+
+  <h3>String Encryption — The Next Level of Obfuscation</h3>
+  <p class="body">Some apps use tools like DexGuard or custom string encryption to hide string literals. Instead of <code>"api.example.com"</code> in the code, you see a call to a decrypt function: <code>StringDecryptor.d(42)</code>. The string is decrypted at runtime.</p>
+
+  <div class="out-block">
+    <div class="out-label">String encryption pattern — how to identify and handle it</div>
+    <pre class="out-pre"><span class="c">// Obfuscated code with string encryption:</span>
+String url = <span class="h">a.b(0x2A)</span>;              &lt;-- encrypted string, index 42
+OkHttpClient client = new OkHttpClient();
+Request request = new Request.Builder()
+    .url(url)
+    .build();
+
+<span class="c">// To get the real strings, three approaches:</span>
+
+<span class="g">// 1. Run the app and hook the decrypt function with Frida:</span>
+<span class="g">Java.perform(function() {</span>
+<span class="g">  var dec = Java.use('a.b');</span>
+<span class="g">  dec['b'].overload('int').implementation = function(idx) {</span>
+<span class="g">    var result = this['b'](idx);</span>
+<span class="g">    console.log('String[' + idx + '] = ' + result);</span>
+<span class="g">    return result;</span>
+<span class="g">  };</span>
+<span class="g">});</span>
+
+<span class="c">// 2. Run the decryptor statically — extract the decrypt method,</span>
+<span class="c">    port it to Python with the same logic and key material</span>
+
+<span class="c">// 3. Extract strings from memory dump after app launch (fridump)</span></pre>
+  </div>
+
+  <h3>Anti-Debug and Anti-Root Detection in Source</h3>
+  <div class="cmd-block">
+    <div class="cmd-head">find anti-analysis checks</div>
+    <div class="cmd-row"><span class="cmd-t">rg "Debug.isDebuggerConnected\|Debug.waitingForDebugger" decompiled/ --type java -A5</span><span class="cmd-n">debugger detection</span></div>
+    <div class="cmd-row"><span class="cmd-t">rg "Build.FINGERPRINT\|Build.TAGS\|Build.PRODUCT\|Build.MANUFACTURER" decompiled/ --type java -B2 -A5</span><span class="cmd-n">emulator detection via build props</span></div>
+    <div class="cmd-row"><span class="cmd-t">rg "\"su\"\|\"superuser\"\|\"Superuser\"\|\"busybox\"" decompiled/ --type java -B2 -A8</span><span class="cmd-n">root detection by searching for su binary</span></div>
+    <div class="cmd-row"><span class="cmd-t">rg "RootBeer\|SafetyNet\|Attestation\|IntegrityManager" decompiled/ --type java -l</span><span class="cmd-n">third-party root detection libraries</span></div>
+    <div class="cmd-row"><span class="cmd-t">rg "getPackageManager\(\)\.getInstallerPackageName" decompiled/ --type java -A5</span><span class="cmd-n">check if installed from Play Store — sideload detection</span></div>
+  </div>
+
+  <div class="out-block">
+    <div class="out-label">Root detection implementation — read this to know exactly what to bypass</div>
+    <pre class="out-pre">public boolean isDeviceRooted() {
+    <span class="c">// Check 1: su binary in common paths</span>
+    String[] paths = {"/system/bin/su", "/system/xbin/su",
+                      "/sbin/su", "/su/bin/su"};
+    for (String path : paths) {
+        if (new File(path).exists()) return true;
+    }
+
+    <span class="c">// Check 2: Build tags contain "test-keys"</span>
+    if (Build.TAGS != null &amp;&amp;
+        <span class="h">Build.TAGS.contains("test-keys")</span>) return true;
+
+    <span class="c">// Check 3: Can execute su?</span>
+    try {
+        Process p = Runtime.getRuntime().exec(<span class="h">new String[]{"su"}</span>);
+        p.destroy();
+        return true;
+    } catch (IOException ignored) {}
+
+    return false;
+}
+
+<span class="c">To bypass: hook isDeviceRooted() with Frida and return false.</span>
+<span class="c">Or: Magisk with DenyList hides the /su paths from the process entirely.</span>
+<span class="c">Or: patch the smali — change "if-eqz v0" to "if-nez v0" to invert the check.</span></pre>
+  </div>
+</div>
+
+<!-- ═══════════ S11: NATIVE LIBS ═══════════ -->
+<div class="div"></div>
+<div class="section" id="s11">
+  <div class="sec-head">
+    <span class="sec-num">11</span>
+    <div>
+      <h2>NATIVE LIBRARY ANALYSIS</h2>
+      <p class="sec-sub">.so files are compiled ARM/x86 binaries. Developers put secrets in native code thinking it's safer. It isn't — it's just slower to extract.</p>
+    </div>
+  </div>
+
+  <div class="think">
+    <div class="think-label">// ANALYST THINKING</div>
+    <p>Native libraries are increasingly common in security-sensitive apps because developers believe compiled ARM code is harder to analyse than Java bytecode. This is partially true — you cannot decompile native code to readable Java. But you can: extract strings from it (they're still in plaintext), disassemble it with Ghidra or radare2, find JNI function exports, and hook exported functions with Frida. The string extraction step alone catches most hardcoded secret findings.</p>
+  </div>
+
+  <h3>Initial Native Library Survey</h3>
+  <div class="cmd-block">
+    <div class="cmd-head">initial .so analysis</div>
+    <div class="cmd-row"><span class="cmd-t">find raw_apk/lib/ -name "*.so" | xargs file</span><span class="cmd-n">confirm architecture and format for each library</span></div>
+    <div class="cmd-row"><span class="cmd-t">strings raw_apk/lib/arm64-v8a/libnative.so | grep -iE 'key|secret|token|password|api|http|BEGIN'</span><span class="cmd-n">extract strings — most valuable first step</span></div>
+    <div class="cmd-row"><span class="cmd-t">strings raw_apk/lib/arm64-v8a/libnative.so | grep -E 'https?://'</span><span class="cmd-n">hardcoded URLs in native code</span></div>
+    <div class="cmd-row"><span class="cmd-t">nm -D raw_apk/lib/arm64-v8a/libnative.so 2>/dev/null | grep "Java_"</span><span class="cmd-n">list JNI exported functions — entry points from Java</span></div>
+    <div class="cmd-row"><span class="cmd-t">readelf -a raw_apk/lib/arm64-v8a/libnative.so | grep -E "NEEDED|SONAME"</span><span class="cmd-n">linked libraries — what does this .so depend on?</span></div>
+    <div class="cmd-row"><span class="cmd-t">binwalk raw_apk/lib/arm64-v8a/libnative.so</span><span class="cmd-n">detect embedded files or compressed data within the .so</span></div>
+  </div>
+
+  <div class="out-block">
+    <div class="out-label">JNI export list — entry points into native code from Java</div>
+    <pre class="out-pre">$ nm -D raw_apk/lib/arm64-v8a/libnative.so | grep "Java_"
+
+<span class="g">Java_com_example_bankapp_crypto_NativeKeyManager_getEncryptionKey</span>
+<span class="g">Java_com_example_bankapp_crypto_NativeKeyManager_deriveKey</span>
+<span class="h">Java_com_example_bankapp_security_RootChecker_isRooted</span>
+<span class="h">Java_com_example_bankapp_security_PinValidator_validatePin</span>
+
+<span class="c">Each Java_ export is callable from Java via native keyword method.</span>
+<span class="c">getEncryptionKey — likely returns a hardcoded or derived key, hook with Frida</span>
+<span class="c">isRooted — native root check, hook to return 0 (false)</span>
+<span class="c">validatePin — native PIN validation, hook to always return 1 (true)</span></pre>
+  </div>
+
+  <h3>Hook Native Functions With Frida</h3>
+  <div class="cmd-block">
+    <div class="cmd-head">frida — intercepting native function return values</div>
+    <div class="cmd-row"><span class="cmd-t">// Hook native getEncryptionKey — intercept the returned key</span></div>
+    <div class="cmd-row"><span class="cmd-t">var lib = Module.findBaseAddress("libnative.so");
+var getKey = lib.add(0x1234); // offset from Ghidra/radare2
+Interceptor.attach(getKey, {
+  onLeave: function(retval) {
+    console.log("[*] getEncryptionKey returned: " +
+      Memory.readUtf8String(retval));
+  }
+});</span></div>
+  </div>
+
+  <div class="callout in">
+    <span class="callout-icon">ℹ</span>
+    <span>To find the function offset: load the .so into <strong>Ghidra</strong> (File → Import → select .so → auto-analyse). Search for the JNI function name. Ghidra shows you the decompiled C code and the virtual address. Subtract the image base to get the offset to use in Frida's <code>lib.add()</code>.</span>
+  </div>
+
+  <h3>React Native Bundle Analysis</h3>
+  <p class="body">React Native apps store business logic in a JavaScript bundle file. This is often entirely readable — no decompilation needed.</p>
+  <div class="cmd-block">
+    <div class="cmd-head">react native bundle extraction</div>
+    <div class="cmd-row"><span class="cmd-t">find raw_apk/assets/ -name "index.android.bundle"</span><span class="cmd-n">find the JS bundle</span></div>
+    <div class="cmd-row"><span class="cmd-t">file raw_apk/assets/index.android.bundle</span><span class="cmd-n">is it plain JS or Hermes bytecode?</span></div>
+    <div class="cmd-row"><span class="cmd-t">cat raw_apk/assets/index.android.bundle | grep -iE 'apiKey|secret|token|password|endpoint'</span><span class="cmd-n">if plain JS — directly grep for secrets</span></div>
+    <div class="cmd-row"><span class="cmd-t">npx react-native-decompiler -i index.android.bundle -o ./rn_decompiled/</span><span class="cmd-n">decompile minified bundle to readable modules</span></div>
+    <div class="cmd-row"><span class="cmd-t"># If Hermes bytecode: use hbctool or hermes-dec to decompile first</span><span class="cmd-n">Hermes = Facebook's optimised JS engine — different format</span></div>
+  </div>
+</div>
+
+<!-- ═══════════ S12: THIRD-PARTY SDKs ═══════════ -->
+<div class="div"></div>
+<div class="section" id="s12">
+  <div class="sec-head">
+    <span class="sec-num">12</span>
+    <div>
+      <h2>THIRD-PARTY SDK ANALYSIS</h2>
+      <p class="sec-sub">The app you're testing is the sum of its code and every SDK it includes. A vulnerability in an SDK is a vulnerability in the app.</p>
+    </div>
+  </div>
+
+  <div class="think">
+    <div class="think-label">// ANALYST THINKING</div>
+    <p>Modern Android apps are typically 30–60% third-party code. Advertising SDKs, analytics SDKs, crash reporting, payment libraries, social login — each one has its own permissions, its own network calls, and its own potential vulnerabilities. I'm looking for two things: SDK versions with known CVEs, and SDK configurations that weaken the app's overall security posture (an analytics SDK that gets the device's location even though the app doesn't need it; a crash reporting SDK that captures all log output including debug logs with credentials).</p>
+  </div>
+
+  <h3>Identify SDKs and Their Versions</h3>
+  <div class="cmd-block">
+    <div class="cmd-head">SDK enumeration</div>
+    <div class="cmd-row"><span class="cmd-t">find decompiled/ -type d | grep -iE 'facebook|google|firebase|adjust|appsflyer|braintree|mixpanel|amplitude|segment|crashlytics|sentry|bugsnag|onesignal'</span><span class="cmd-n">identify bundled SDKs by package name</span></div>
+    <div class="cmd-row"><span class="cmd-t">rg "VERSION\|VERSION_NAME\|SDK_VERSION\|LIB_VERSION" decompiled/ --type java | grep -iE 'facebook|google|stripe|adjust|firebase'</span><span class="cmd-n">extract SDK version strings</span></div>
+    <div class="cmd-row"><span class="cmd-t">cat decoded/res/values/strings.xml | grep -iE 'version|sdk|lib'</span><span class="cmd-n">version strings in resources</span></div>
+    <div class="cmd-row"><span class="cmd-t"># Cross-reference versions against: osv.dev, NVD, snyk.io</span><span class="cmd-n">check each SDK version for known CVEs</span></div>
+  </div>
+
+  <div class="findings">
+    <div class="finding">
+      <div class="f-sev c">CRITICAL</div>
+      <div class="f-body">
+        <div class="f-title">Outdated SDK with a known CVE enabling RCE or auth bypass</div>
+        <div class="f-detail">Example: an old version of OkHttp with a hostname verification bypass (CVE-2016-2402), or an old version of the Facebook SDK vulnerable to token theft. Check each major SDK version on osv.dev. Version-specific CVEs are immediately exploitable findings that require no code analysis beyond confirming the version number.</div>
+      </div>
+    </div>
+    <div class="finding">
+      <div class="f-sev h">HIGH</div>
+      <div class="f-body">
+        <div class="f-title">Crash reporting SDK configured to capture all logs</div>
+        <div class="f-detail">Firebase Crashlytics, Sentry, and Bugsnag can be configured to capture logcat output and include it in crash reports. If the app logs sensitive data (Section 8 — Log.d with tokens), and the crash reporting SDK ships those logs to a third-party server, the sensitive data is exfiltrated from every crash. Check the SDK initialisation for log capture configuration.</div>
+      </div>
+    </div>
+    <div class="finding">
+      <div class="f-sev h">HIGH</div>
+      <div class="f-body">
+        <div class="f-title">WebView with addJavascriptInterface and JavaScript enabled</div>
+        <div class="f-detail">addJavascriptInterface exposes Java objects to JavaScript running in the WebView. If the WebView loads any attacker-controllable URL (via deep link, redirect, or XSS in loaded content), the JavaScript can call the exposed Java methods — potentially achieving remote code execution on the device. Verify what URLs the WebView loads and whether the interface is restricted.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="cmd-block">
+    <div class="cmd-head">WebView security checks</div>
+    <div class="cmd-row"><span class="cmd-t">rg "addJavascriptInterface\|setJavaScriptEnabled\|WebView" decompiled/ --type java -l</span><span class="cmd-n">files using WebView</span></div>
+    <div class="cmd-row"><span class="cmd-t">rg "addJavascriptInterface" decompiled/ --type java -B5 -A3</span><span class="cmd-n">what Java object is exposed to JS?</span></div>
+    <div class="cmd-row"><span class="cmd-t">rg "setJavaScriptEnabled\(true\)" decompiled/ --type java -B3 -A10</span><span class="cmd-n">JavaScript enabled — find what URLs are loaded</span></div>
+    <div class="cmd-row"><span class="cmd-t">rg "loadUrl\|loadData\|loadDataWithBaseURL" decompiled/ --type java -B3 -A5</span><span class="cmd-n">what does the WebView actually load?</span></div>
+    <div class="cmd-row"><span class="cmd-t">rg "setAllowFileAccess\|setAllowUniversalAccessFromFileURLs" decompiled/ --type java -A3</span><span class="cmd-n">file:// access — can read arbitrary local files if enabled</span></div>
+  </div>
+</div>
+
+<!-- ═══════════ S13: CHECKLIST ═══════════ -->
+<div class="div"></div>
+<div class="section" id="s13">
+  <div class="sec-head">
+    <span class="sec-num">13</span>
+    <div>
+      <h2>PROFESSIONAL CHECKLIST</h2>
+      <p class="sec-sub">Click to mark complete. Every item must be verified before the engagement closes.</p>
+    </div>
+  </div>
+
+  <div class="checklist">
+    <div class="check-item" onclick="toggle(this)">
+      <div class="check-ph">EXTRACT</div>
+      <div class="check-wrap"><div class="check-box"></div><span class="check-text">Unpacked APK as ZIP — surveyed full file tree, read every filename carefully</span></div>
+    </div>
+    <div class="check-item" onclick="toggle(this)">
+      <div class="check-ph">EXTRACT</div>
+      <div class="check-wrap"><div class="check-box"></div><span class="check-text">Ran apkid — identified packer, obfuscator, anti-analysis techniques, and framework</span></div>
+    </div>
+    <div class="check-item" onclick="toggle(this)">
+      <div class="check-ph">EXTRACT</div>
+      <div class="check-wrap"><div class="check-box"></div><span class="check-text">Checked signing certificate — not debug cert, RSA key size 2048+, valid expiry</span></div>
+    </div>
+    <div class="check-item" onclick="toggle(this)">
+      <div class="check-ph">EXTRACT</div>
+      <div class="check-wrap"><div class="check-box"></div><span class="check-text">Opened any bundled .db files with sqlite3 — checked all tables</span></div>
+    </div>
+    <div class="check-item" onclick="toggle(this)">
+      <div class="check-ph">EXTRACT</div>
+      <div class="check-wrap"><div class="check-box"></div><span class="check-text">Checked assets/ for .p12, .pem, .bks, .jks, keystore, google-services.json</span></div>
+    </div>
+    <div class="check-item" onclick="toggle(this)">
+      <div class="check-ph">MANIFEST</div>
+      <div class="check-wrap"><div class="check-box"></div><span class="check-text">Decoded manifest with apktool — checked debuggable, allowBackup, usesCleartextTraffic</span></div>
+    </div>
+    <div class="check-item" onclick="toggle(this)">
+      <div class="check-ph">MANIFEST</div>
+      <div class="check-wrap"><div class="check-box"></div><span class="check-text">Read Network Security Config — checked pinning, CA trust, cleartext domains, expiry</span></div>
+    </div>
+    <div class="check-item" onclick="toggle(this)">
+      <div class="check-ph">MANIFEST</div>
+      <div class="check-wrap"><div class="check-box"></div><span class="check-text">Enumerated all exported components — documented each one for code review</span></div>
+    </div>
+    <div class="check-item" onclick="toggle(this)">
+      <div class="check-ph">MANIFEST</div>
+      <div class="check-wrap"><div class="check-box"></div><span class="check-text">Checked custom permission protectionLevels — verified signature not normal for sensitive ones</span></div>
+    </div>
+    <div class="check-item" onclick="toggle(this)">
+      <div class="check-ph">DECOMPILE</div>
+      <div class="check-wrap"><div class="check-box"></div><span class="check-text">Decompiled with jadx — read package structure, identified high-value class files</span></div>
+    </div>
+    <div class="check-item" onclick="toggle(this)">
+      <div class="check-ph">DECOMPILE</div>
+      <div class="check-wrap"><div class="check-box"></div><span class="check-text">Read BuildConfig.java and all Constants/Config files — checked every field</span></div>
+    </div>
+    <div class="check-item" onclick="toggle(this)">
+      <div class="check-ph">SECRETS</div>
+      <div class="check-wrap"><div class="check-box"></div><span class="check-text">Ran comprehensive ripgrep patterns for API keys, AWS keys, JWT, PEM, DB strings</span></div>
+    </div>
+    <div class="check-item" onclick="toggle(this)">
+      <div class="check-ph">SECRETS</div>
+      <div class="check-wrap"><div class="check-box"></div><span class="check-text">Ran apkleaks against the APK — reviewed all matched patterns</span></div>
+    </div>
+    <div class="check-item" onclick="toggle(this)">
+      <div class="check-ph">SECRETS</div>
+      <div class="check-wrap"><div class="check-box"></div><span class="check-text">Ran strings against all .dex files — searched result for secrets and URLs</span></div>
+    </div>
+    <div class="check-item" onclick="toggle(this)">
+      <div class="check-ph">SECRETS</div>
+      <div class="check-wrap"><div class="check-box"></div><span class="check-text">Read all JSON/XML config files in assets/ and res/ — checked for embedded credentials</span></div>
+    </div>
+    <div class="check-item" onclick="toggle(this)">
+      <div class="check-ph">CRYPTO</div>
+      <div class="check-wrap"><div class="check-box"></div><span class="check-text">Found all Cipher.getInstance() calls — verified algorithm, mode, and padding</span></div>
+    </div>
+    <div class="check-item" onclick="toggle(this)">
+      <div class="check-ph">CRYPTO</div>
+      <div class="check-wrap"><div class="check-box"></div><span class="check-text">Checked IvParameterSpec construction — confirmed IV is random, not static</span></div>
+    </div>
+    <div class="check-item" onclick="toggle(this)">
+      <div class="check-ph">CRYPTO</div>
+      <div class="check-wrap"><div class="check-box"></div><span class="check-text">Checked all MessageDigest calls — flagged MD5 and SHA1 usage</span></div>
+    </div>
+    <div class="check-item" onclick="toggle(this)">
+      <div class="check-ph">CRYPTO</div>
+      <div class="check-wrap"><div class="check-box"></div><span class="check-text">Checked SecretKeySpec construction — key material source verified (not hardcoded)</span></div>
+    </div>
+    <div class="check-item" onclick="toggle(this)">
+      <div class="check-ph">CRYPTO</div>
+      <div class="check-wrap"><div class="check-box"></div><span class="check-text">Reviewed Keystore key parameters — setUserAuthenticationRequired verified if needed</span></div>
+    </div>
+    <div class="check-item" onclick="toggle(this)">
+      <div class="check-ph">NETWORK</div>
+      <div class="check-wrap"><div class="check-box"></div><span class="check-text">Read TrustManager implementation — confirmed no trust-all or hostname override</span></div>
+    </div>
+    <div class="check-item" onclick="toggle(this)">
+      <div class="check-ph">NETWORK</div>
+      <div class="check-wrap"><div class="check-box"></div><span class="check-text">Read pinning implementation end-to-end — confirmed it's called, attached, not catch-bypassed</span></div>
+    </div>
+    <div class="check-item" onclick="toggle(this)">
+      <div class="check-ph">NETWORK</div>
+      <div class="check-wrap"><div class="check-box"></div><span class="check-text">Read all Retrofit interface files — documented every endpoint for API testing</span></div>
+    </div>
+    <div class="check-item" onclick="toggle(this)">
+      <div class="check-ph">NETWORK</div>
+      <div class="check-wrap"><div class="check-box"></div><span class="check-text">Read OkHttp interceptors — confirmed auth header injection and checked for sensitive data logging</span></div>
+    </div>
+    <div class="check-item" onclick="toggle(this)">
+      <div class="check-ph">STORAGE</div>
+      <div class="check-wrap"><div class="check-box"></div><span class="check-text">Found all SharedPreferences usage — checked if sensitive data uses EncryptedSharedPreferences</span></div>
+    </div>
+    <div class="check-item" onclick="toggle(this)">
+      <div class="check-ph">STORAGE</div>
+      <div class="check-wrap"><div class="check-box"></div><span class="check-text">Checked file write operations — no MODE_WORLD_READABLE, no external storage for sensitive data</span></div>
+    </div>
+    <div class="check-item" onclick="toggle(this)">
+      <div class="check-ph">STORAGE</div>
+      <div class="check-wrap"><div class="check-box"></div><span class="check-text">Grepped Log calls for sensitive data patterns — confirmed none ship to crash reporting</span></div>
+    </div>
+    <div class="check-item" onclick="toggle(this)">
+      <div class="check-ph">IPC</div>
+      <div class="check-wrap"><div class="check-box"></div><span class="check-text">Read source of every exported Activity — checked auth, ownership verification, and intent input handling</span></div>
+    </div>
+    <div class="check-item" onclick="toggle(this)">
+      <div class="check-ph">IPC</div>
+      <div class="check-wrap"><div class="check-box"></div><span class="check-text">Read ContentProvider query() method — checked for SQL injection via selection parameter</span></div>
+    </div>
+    <div class="check-item" onclick="toggle(this)">
+      <div class="check-ph">IPC</div>
+      <div class="check-wrap"><div class="check-box"></div><span class="check-text">Read deep link handler — checked for open redirect, token injection, unvalidated parameters</span></div>
+    </div>
+    <div class="check-item" onclick="toggle(this)">
+      <div class="check-ph">NATIVE</div>
+      <div class="check-wrap"><div class="check-box"></div><span class="check-text">Ran strings on all .so files — searched output for secrets, URLs, and key material</span></div>
+    </div>
+    <div class="check-item" onclick="toggle(this)">
+      <div class="check-ph">NATIVE</div>
+      <div class="check-wrap"><div class="check-box"></div><span class="check-text">Listed JNI exports with nm -D — identified security-relevant native functions to hook</span></div>
+    </div>
+    <div class="check-item" onclick="toggle(this)">
+      <div class="check-ph">SDKS</div>
+      <div class="check-wrap"><div class="check-box"></div><span class="check-text">Identified all third-party SDKs and versions — cross-referenced against CVE databases</span></div>
+    </div>
+    <div class="check-item" onclick="toggle(this)">
+      <div class="check-ph">SDKS</div>
+      <div class="check-wrap"><div class="check-box"></div><span class="check-text">Checked WebView configuration — addJavascriptInterface, setJavaScriptEnabled, file access</span></div>
+    </div>
+  </div>
+
+  <div id="prog-summary" style="margin-top:14px;font-family:'Fira Code',monospace;font-size:11px;color:var(--muted);">
+    0 / 34 items completed
+  </div>
+</div>
+
+<div class="div"></div>
+</div><!-- /content -->
+
+<footer style="padding:24px 64px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
+  <span style="font-family:'Fira Code',monospace;font-size:10px;color:var(--dimmed);letter-spacing:1px;">ANDROID STATIC ANALYSIS — ADVANCED FIELD GUIDE</span>
+  <span style="font-family:'Fira Code',monospace;font-size:10px;color:var(--dimmed);">For authorized security testing only</span>
+</footer>
+</main>
+
+<script>
+// Progress bar
+window.addEventListener('scroll', () => {
+  const el = document.documentElement;
+  const pct = (el.scrollTop / (el.scrollHeight - el.clientHeight)) * 100;
+  document.getElementById('prog').style.width = pct + '%';
+});
+
+// Active nav
+const sections = document.querySelectorAll('.section');
+const navLinks = document.querySelectorAll('.nav-link');
+const obs = new IntersectionObserver(entries => {
+  entries.forEach(e => {
+    if (e.isIntersecting) {
+      navLinks.forEach(l => l.classList.remove('active'));
+      const lnk = document.querySelector(`.nav-link[href="#${e.target.id}"]`);
+      if (lnk) lnk.classList.add('active');
+    }
+  });
+}, { threshold: 0.2 });
+sections.forEach(s => obs.observe(s));
+
+// Checklist
+function toggle(el) {
+  el.classList.toggle('done');
+  el.querySelector('.check-box').textContent = el.classList.contains('done') ? '✓' : '';
+  const total = document.querySelectorAll('.check-item').length;
+  const done  = document.querySelectorAll('.check-item.done').length;
+  document.getElementById('prog-summary').textContent = `${done} / ${total} items completed`;
+}
+</script>
+</body>
+</html>
