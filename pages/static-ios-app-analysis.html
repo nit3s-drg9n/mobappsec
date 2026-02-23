@@ -1,0 +1,1578 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>iOS Static Analysis — Advanced Techniques Field Guide</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,300;0,400;0,500;0,600;1,400&family=Clash+Display:wght@400;500;600;700&family=Epilogue:ital,wght@0,300;0,400;0,500;1,300&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:       #F4F1EC;
+  --surface:  #EDEAE3;
+  --panel:    #E5E1D8;
+  --raised:   #FFFFFF;
+  --border:   #D4CFCA;
+  --border2:  #C2BDB6;
+  --accent:   #C0392B;
+  --blue:     #2E4057;
+  --green:    #1A6B45;
+  --orange:   #C06000;
+  --purple:   #5B3A8C;
+  --yellow:   #8C6A00;
+  --white:    #1A1714;
+  --muted:    #5C5550;
+  --dimmed:   #9C9590;
+  --code-bg:  #1C1917;
+  --code-cmd: #F4C842;
+  --code-out: #5EE896;
+  --code-cmt: #4A4540;
+  --code-h:   #FF6B6B;
+  --code-p:   #C792EA;
+}
+
+*,*::before,*::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+
+body {
+  background: var(--bg);
+  color: var(--white);
+  font-family: 'Epilogue', sans-serif;
+  font-size: 15px;
+  line-height: 1.7;
+  overflow-x: hidden;
+}
+
+/* paper texture overlay */
+body::before {
+  content: '';
+  position: fixed; inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='4' height='4'%3E%3Crect width='4' height='4' fill='%23F4F1EC'/%3E%3Ccircle cx='1' cy='1' r='0.4' fill='%23D4CFCA' opacity='0.4'/%3E%3Ccircle cx='3' cy='3' r='0.4' fill='%23D4CFCA' opacity='0.4'/%3E%3C/svg%3E");
+  pointer-events: none; z-index: 0;
+}
+
+/* ── SIDEBAR ── */
+.sidebar {
+  position: fixed; left: 0; top: 0; bottom: 0; width: 220px;
+  background: var(--blue);
+  overflow-y: auto; z-index: 100;
+  display: flex; flex-direction: column;
+}
+
+.sidebar-brand {
+  padding: 24px 20px 20px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+
+.sidebar-brand .os {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 9px;
+  color: var(--accent);
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+
+.sidebar-brand .title {
+  font-family: 'Clash Display', sans-serif;
+  font-size: 19px;
+  font-weight: 600;
+  color: #FFFFFF;
+  line-height: 1.15;
+  letter-spacing: 0.5px;
+}
+
+.nav-label {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 8px;
+  color: rgba(255,255,255,0.25);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  padding: 16px 20px 5px;
+}
+
+.nav-link {
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 20px;
+  color: rgba(255,255,255,0.45);
+  text-decoration: none;
+  font-size: 12px;
+  font-family: 'Epilogue', sans-serif;
+  border-left: 2px solid transparent;
+  transition: all 0.15s;
+}
+.nav-link:hover, .nav-link.active {
+  color: #FFFFFF;
+  background: rgba(255,255,255,0.06);
+  border-left-color: var(--accent);
+}
+.nav-link .num {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 9px;
+  color: rgba(255,255,255,0.2);
+  width: 20px; flex-shrink: 0;
+}
+
+/* ── PROGRESS ── */
+.progress-bar {
+  position: fixed; top: 0; left: 220px; right: 0;
+  height: 3px; background: var(--border); z-index: 200;
+}
+.progress-fill {
+  height: 100%; width: 0%;
+  background: linear-gradient(90deg, var(--accent), var(--purple));
+  transition: width 0.08s;
+}
+
+/* ── MAIN ── */
+.main { margin-left: 220px; position: relative; z-index: 1; }
+
+/* ── HERO ── */
+.hero {
+  padding: 72px 64px 56px;
+  background: var(--blue);
+  position: relative; overflow: hidden;
+}
+
+.hero::after {
+  content: 'iOS';
+  position: absolute; right: -20px; top: 50%;
+  transform: translateY(-50%);
+  font-family: 'Clash Display', sans-serif;
+  font-size: 240px; font-weight: 700;
+  color: rgba(255,255,255,0.03);
+  pointer-events: none; line-height: 1;
+  letter-spacing: -8px;
+}
+
+.hero-eyebrow {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px; color: var(--accent);
+  letter-spacing: 3px; text-transform: uppercase;
+  margin-bottom: 20px;
+  display: flex; align-items: center; gap: 12px;
+}
+.hero-eyebrow::before { content: ''; width: 32px; height: 1px; background: var(--accent); }
+
+h1 {
+  font-family: 'Clash Display', sans-serif;
+  font-size: clamp(42px, 6vw, 72px);
+  font-weight: 700;
+  color: #FFFFFF;
+  line-height: 1.05;
+  letter-spacing: -1px;
+  margin-bottom: 16px;
+}
+h1 em { color: var(--accent); font-style: normal; }
+
+.hero-desc {
+  font-size: 15px;
+  color: rgba(255,255,255,0.5);
+  max-width: 540px;
+  line-height: 1.75;
+  margin-bottom: 28px;
+}
+
+.tool-row { display: flex; flex-wrap: wrap; gap: 7px; }
+.tool-chip {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px; padding: 4px 10px;
+  border: 1px solid rgba(255,255,255,0.12);
+  color: rgba(255,255,255,0.4);
+  border-radius: 2px;
+}
+
+/* ── CONTENT ── */
+.content { max-width: 880px; padding: 0 64px 80px; }
+
+/* ── SECTION ── */
+.section { padding-top: 60px; }
+
+.sec-head {
+  display: flex; align-items: flex-start; gap: 16px;
+  margin-bottom: 28px; padding-bottom: 20px;
+  border-bottom: 2px solid var(--border);
+}
+.sec-num {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px; color: var(--accent);
+  background: rgba(192,57,43,0.08);
+  border: 1px solid rgba(192,57,43,0.2);
+  padding: 3px 8px; border-radius: 2px;
+  flex-shrink: 0; margin-top: 5px;
+}
+h2 {
+  font-family: 'Clash Display', sans-serif;
+  font-size: 30px; font-weight: 600;
+  color: var(--blue); line-height: 1.1;
+  margin-bottom: 4px;
+}
+.sec-sub { font-size: 13.5px; color: var(--muted); font-style: italic; }
+
+/* ── H3 ── */
+h3 {
+  font-family: 'Epilogue', sans-serif;
+  font-weight: 500; font-size: 11px;
+  color: var(--accent);
+  margin: 32px 0 12px;
+  text-transform: uppercase; letter-spacing: 2px;
+  display: flex; align-items: center; gap: 10px;
+}
+h3::after {
+  content: '';
+  flex: 1; height: 1px;
+  background: var(--border);
+}
+
+/* ── THINK BLOCK ── */
+.think {
+  background: var(--blue);
+  border-radius: 3px;
+  padding: 20px 24px;
+  margin: 16px 0 28px;
+}
+.think-label {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 9px; color: var(--accent);
+  letter-spacing: 2px; margin-bottom: 10px;
+}
+.think p {
+  color: rgba(255,255,255,0.55);
+  font-style: italic; font-size: 14px;
+  line-height: 1.85;
+}
+.think p + p { margin-top: 10px; }
+
+/* ── BODY TEXT ── */
+.body { color: var(--muted); font-size: 14.5px; line-height: 1.8; margin: 8px 0 16px; }
+.body strong { color: var(--white); font-weight: 500; }
+.body code {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 12.5px; color: var(--accent);
+  background: rgba(192,57,43,0.07);
+  padding: 1px 5px; border-radius: 2px;
+}
+
+/* ── CMD BLOCK ── */
+.cmd-block {
+  background: var(--code-bg);
+  border-radius: 4px; overflow: hidden;
+  margin: 10px 0 18px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 12.5px;
+  border: 1px solid #2C2825;
+}
+.cmd-head {
+  background: #141210;
+  padding: 7px 14px;
+  font-size: 9px; color: #4A4540;
+  letter-spacing: 2px; text-transform: uppercase;
+  border-bottom: 1px solid #2C2825;
+  display: flex; align-items: center; gap: 8px;
+}
+.cmd-head::before {
+  content: ''; width: 7px; height: 7px; border-radius: 50%;
+  background: #FF5F56; flex-shrink: 0;
+  box-shadow: 12px 0 0 #FFBD2E, 24px 0 0 #27C93F;
+}
+.cmd-row {
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 9px 14px;
+  border-bottom: 1px solid rgba(44,40,37,0.8);
+  transition: background 0.1s;
+}
+.cmd-row:last-child { border-bottom: none; }
+.cmd-row:hover { background: rgba(192,57,43,0.04); }
+.cmd-t {
+  color: var(--code-cmd);
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  line-height: 1.65;
+}
+.cmd-n {
+  color: var(--code-cmt);
+  font-size: 11px;
+  padding-left: 10px;
+  border-left: 2px solid rgba(192,57,43,0.2);
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+/* ── OUTPUT BLOCK ── */
+.out-block { margin: 10px 0 24px; }
+.out-label {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px; color: var(--green);
+  margin-bottom: 5px;
+  display: flex; align-items: center; gap: 7px;
+}
+.out-label::before { content: '▶'; font-size: 8px; }
+.out-pre {
+  background: var(--code-bg);
+  border: 1px solid #2C2825;
+  border-left: 3px solid var(--green);
+  border-radius: 3px;
+  padding: 14px 18px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 12px; color: #5EE896;
+  white-space: pre; overflow-x: auto;
+  line-height: 1.9;
+}
+.out-pre .h { color: var(--code-h); font-weight: 600; }
+.out-pre .g { color: var(--code-out); }
+.out-pre .c { color: var(--code-cmt); }
+.out-pre .y { color: var(--code-cmd); }
+.out-pre .p { color: var(--code-p); }
+.out-pre .w { color: #FFFFFF; }
+
+/* ── FINDINGS ── */
+.findings { display: flex; flex-direction: column; gap: 2px; margin: 14px 0 22px; }
+.finding {
+  display: grid; grid-template-columns: 88px 1fr;
+  background: var(--raised);
+  border: 1px solid var(--border);
+  border-radius: 3px; overflow: hidden;
+  transition: border-color 0.15s;
+}
+.finding:hover { border-color: var(--border2); }
+.f-sev {
+  padding: 14px 10px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 9px; font-weight: 600;
+  letter-spacing: 1px;
+  display: flex; align-items: flex-start;
+  justify-content: center; padding-top: 17px;
+}
+.f-sev.c { color: var(--accent);  background: rgba(192,57,43,0.06); }
+.f-sev.h { color: var(--orange);  background: rgba(192,96,0,0.06); }
+.f-sev.m { color: var(--yellow);  background: rgba(140,106,0,0.06); }
+.f-sev.i { color: var(--blue);    background: rgba(46,64,87,0.06); }
+.f-body { padding: 13px 15px; border-left: 1px solid var(--border); }
+.f-title { font-weight: 500; color: var(--blue); font-size: 14px; margin-bottom: 5px; }
+.f-detail { font-size: 13.5px; color: var(--muted); line-height: 1.65; }
+
+/* ── CALLOUT ── */
+.callout {
+  border-radius: 3px; padding: 12px 16px; margin: 14px 0;
+  font-size: 13.5px; display: flex; gap: 10px;
+  align-items: flex-start; line-height: 1.65;
+}
+.callout-icon { flex-shrink: 0; font-size: 15px; margin-top: 1px; }
+.callout.cr { background: rgba(192,57,43,0.06); border: 1px solid rgba(192,57,43,0.2); color: #A02020; }
+.callout.wa { background: rgba(192,96,0,0.06);  border: 1px solid rgba(192,96,0,0.2);  color: #8C5000; }
+.callout.ti { background: rgba(26,107,69,0.06); border: 1px solid rgba(26,107,69,0.2); color: #1A6B45; }
+.callout.in { background: rgba(46,64,87,0.06);  border: 1px solid rgba(46,64,87,0.2);  color: var(--blue); }
+
+/* ── TECH CARD ── */
+.tech-card {
+  background: var(--raised);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--purple);
+  border-radius: 3px; padding: 16px 20px;
+  margin: 10px 0 18px;
+}
+.tech-card-title {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px; color: var(--purple);
+  letter-spacing: 1px; margin-bottom: 10px;
+  display: flex; align-items: center; gap: 8px;
+}
+.tech-card-title::before { content: '◆'; font-size: 8px; }
+
+/* ── DIVIDER ── */
+.div { height: 1px; background: var(--border); margin: 48px 0 0; }
+
+/* ── CHECKLIST ── */
+.checklist { margin: 14px 0; }
+.check-item {
+  display: grid; grid-template-columns: 80px 1fr;
+  background: var(--raised);
+  border: 1px solid var(--border);
+  border-radius: 3px; overflow: hidden;
+  margin-bottom: 2px; cursor: pointer;
+  transition: background 0.1s;
+}
+.check-item:hover { background: var(--surface); }
+.check-item.done { opacity: 0.4; }
+.check-item.done .check-text { text-decoration: line-through; color: var(--dimmed); }
+.check-ph {
+  padding: 9px 10px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 8px; color: var(--dimmed);
+  font-weight: 600; letter-spacing: 1px;
+  display: flex; align-items: center;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+}
+.check-wrap { padding: 9px 13px; display: flex; align-items: center; gap: 9px; }
+.check-box {
+  width: 13px; height: 13px;
+  border: 1px solid var(--dimmed);
+  border-radius: 2px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 9px; color: var(--green);
+  transition: all 0.15s;
+}
+.check-item.done .check-box { background: rgba(26,107,69,0.1); border-color: var(--green); }
+.check-text { font-size: 13.5px; color: var(--white); transition: all 0.15s; }
+
+/* ── SCROLLBAR ── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+@media (max-width: 900px) {
+  .sidebar { display: none; }
+  .main { margin-left: 0; }
+  .content, .hero { padding-left: 20px; padding-right: 20px; }
+  h1 { font-size: 36px; }
+  .progress-bar { left: 0; }
+}
+
+@keyframes fadeUp { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
+.section { animation: fadeUp 0.35s ease both; }
+</style>
+</head>
+<body>
+
+<div class="progress-bar"><div class="progress-fill" id="prog"></div></div>
+
+<!-- SIDEBAR -->
+<nav class="sidebar">
+  <div class="sidebar-brand">
+    <div class="os">iOS Security</div>
+    <div class="title">Static Analysis<br>Field Guide</div>
+  </div>
+  <div class="nav-label">Sections</div>
+  <a href="#s1"  class="nav-link"><span class="num">01</span>Mindset &amp; Setup</a>
+  <a href="#s2"  class="nav-link"><span class="num">02</span>IPA Extraction</a>
+  <a href="#s3"  class="nav-link"><span class="num">03</span>Info.plist Analysis</a>
+  <a href="#s4"  class="nav-link"><span class="num">04</span>Mach-O Binary</span></a>
+  <a href="#s5"  class="nav-link"><span class="num">05</span>Class Dumping</a>
+  <a href="#s6"  class="nav-link"><span class="num">06</span>Hardcoded Secrets</a>
+  <a href="#s7"  class="nav-link"><span class="num">07</span>Cryptography</a>
+  <a href="#s8"  class="nav-link"><span class="num">08</span>Network &amp; ATS</a>
+  <a href="#s9"  class="nav-link"><span class="num">09</span>Data Storage</a>
+  <a href="#s10" class="nav-link"><span class="num">10</span>Swift / ObjC Patterns</a>
+  <a href="#s11" class="nav-link"><span class="num">11</span>Third-Party &amp; SDKs</a>
+  <a href="#s12" class="nav-link"><span class="num">12</span>Checklist</a>
+</nav>
+
+<main class="main">
+
+<!-- HERO -->
+<header class="hero">
+  <div class="hero-eyebrow">Advanced Techniques — Real Methods That Work</div>
+  <h1>iOS Static<br><em>Analysis</em></h1>
+  <p class="hero-desc">How a professional reads an IPA without running it. Mach-O binaries, class dumping, plist forensics, Keychain misuse, ATS exceptions, Swift/ObjC patterns, and binary protection analysis.</p>
+  <div class="tool-row">
+    <span class="tool-chip">otool</span>
+    <span class="tool-chip">class-dump</span>
+    <span class="tool-chip">nm</span>
+    <span class="tool-chip">strings</span>
+    <span class="tool-chip">Hopper</span>
+    <span class="tool-chip">Ghidra</span>
+    <span class="tool-chip">MobSF</span>
+    <span class="tool-chip">objection</span>
+    <span class="tool-chip">ipsw</span>
+    <span class="tool-chip">ipatool</span>
+    <span class="tool-chip">plutil</span>
+    <span class="tool-chip">jtool2</span>
+    <span class="tool-chip">Frida</span>
+    <span class="tool-chip">radare2</span>
+  </div>
+</header>
+
+<div class="content">
+
+<!-- ═══ S1: MINDSET ═══ -->
+<div class="section" id="s1">
+  <div class="sec-head">
+    <span class="sec-num">01</span>
+    <div>
+      <h2>Mindset &amp; Environment</h2>
+      <p class="sec-sub">iOS static analysis is harder than Android — and more rewarding when it works.</p>
+    </div>
+  </div>
+
+  <div class="think">
+    <div class="think-label">// ANALYST THINKING</div>
+    <p>iOS is a fundamentally different beast from Android. The code is compiled to ARM64 Mach-O binaries — not readable Dalvik bytecode. There is no manifest equivalent that nicely lists components; the Info.plist is close but tells you far less. There's no content provider concept. The security model is tighter by design, but developers still find creative ways to break it. Hardcoded secrets in Swift string literals, ATS exceptions that gut transport security, Keychain items stored with accessibility flags that allow extraction from unlocked devices, third-party SDKs with known CVEs — these are everywhere.</p>
+    <p>The critical iOS-specific mindset shift: you spend more time reading binary symbols, headers, and metadata than reading source code. Class-dump reconstructs Objective-C headers from the binary. Swift is trickier — demangled symbols give you method names and types. Strings extraction catches what decompilers miss. And always — the Info.plist and embedded plists tell you things the binary doesn't.</p>
+  </div>
+
+  <h3>The iOS-Specific Questions</h3>
+  <div class="findings">
+    <div class="finding">
+      <div class="f-sev i">Q1</div>
+      <div class="f-body">
+        <div class="f-title">What binary protections are enabled?</div>
+        <div class="f-detail">PIE (ASLR), stack canaries, ARC, Objective-C method swizzling protection. These don't prevent static analysis but tell you how hard runtime exploitation will be and whether the app was built with security in mind.</div>
+      </div>
+    </div>
+    <div class="finding">
+      <div class="f-sev i">Q2</div>
+      <div class="f-body">
+        <div class="f-title">What does the Info.plist tell you about permissions, URL schemes, and ATS?</div>
+        <div class="f-detail">The Info.plist is the iOS equivalent of the Android manifest — but richer in some ways. URL schemes define deep links. ATS exceptions define transport security. Usage descriptions reveal what data the app accesses. Entitlements define Keychain groups and capabilities.</div>
+      </div>
+    </div>
+    <div class="finding">
+      <div class="f-sev i">Q3</div>
+      <div class="f-body">
+        <div class="f-title">What secrets are in the binary or bundled resources?</div>
+        <div class="f-detail">Hardcoded API keys, tokens, private keys, and credentials in Swift/ObjC string literals survive compilation into the binary and are extractable with strings. Embedded .plist, .json, and .db files in the bundle are directly readable.</div>
+      </div>
+    </div>
+    <div class="finding">
+      <div class="f-sev i">Q4</div>
+      <div class="f-body">
+        <div class="f-title">How does the app store sensitive data?</div>
+        <div class="f-detail">Keychain is the right place — but kSecAttrAccessibleAlways and kSecAttrAccessibleAfterFirstUnlock are wrong accessibility levels. NSUserDefaults is almost always wrong for sensitive data. Files written to the Documents/ directory are accessible via iTunes backup. CoreData and SQLite databases may be unencrypted.</div>
+      </div>
+    </div>
+  </div>
+
+  <h3>Environment Setup</h3>
+  <div class="cmd-block">
+    <div class="cmd-head">macOS — required tools</div>
+    <div class="cmd-row"><span class="cmd-t">brew install --cask hopper-disassembler</span><span class="cmd-n">best iOS disassembler — commercial but worth it</span></div>
+    <div class="cmd-row"><span class="cmd-t">brew install class-dump</span><span class="cmd-n">reconstruct ObjC headers from Mach-O binaries</span></div>
+    <div class="cmd-row"><span class="cmd-t">brew install jtool2</span><span class="cmd-n">Swiss army knife for Mach-O — better than otool for many tasks</span></div>
+    <div class="cmd-row"><span class="cmd-t">pip install frida-tools --break-system-packages</span><span class="cmd-n">Frida CLI tools</span></div>
+    <div class="cmd-row"><span class="cmd-t">pip install objection --break-system-packages</span><span class="cmd-n">Frida-based interactive shell</span></div>
+    <div class="cmd-row"><span class="cmd-t">docker pull opensecurity/mobile-security-framework-mobsf</span><span class="cmd-n">automated iOS static analysis</span></div>
+    <div class="cmd-row"><span class="cmd-t">brew install ipsw</span><span class="cmd-n">Apple firmware and IPA tooling</span></div>
+    <div class="cmd-row"><span class="cmd-t"># Ghidra: download from ghidra-sre.org — add iOS Loader plugin</span><span class="cmd-n">free — great for deep binary analysis</span></div>
+  </div>
+
+  <div class="callout wa">
+    <span class="callout-icon">⚠</span>
+    <span>Most iOS static analysis requires a <strong>decrypted IPA</strong>. Apps downloaded from the App Store are FairPlay-encrypted — the binary is encrypted and class-dump, strings, and disassemblers produce garbage. You need either: (1) a jailbroken device to decrypt at runtime with tools like frida-ios-dump or Clutch, or (2) a developer/enterprise IPA that was never encrypted, or (3) a TestFlight build. Always confirm the binary is decrypted before analysis.</span>
+  </div>
+</div>
+
+<!-- ═══ S2: IPA EXTRACTION ═══ -->
+<div class="div"></div>
+<div class="section" id="s2">
+  <div class="sec-head">
+    <span class="sec-num">02</span>
+    <div>
+      <h2>IPA Extraction &amp; Structure</h2>
+      <p class="sec-sub">An IPA is a ZIP. What's inside it tells you everything before you touch a disassembler.</p>
+    </div>
+  </div>
+
+  <div class="think">
+    <div class="think-label">// ANALYST THINKING</div>
+    <p>The first ten minutes with an IPA should not involve a disassembler. Unzip it, read the directory structure, open the Info.plist, survey the bundle. Embedded databases, .plist configuration files, bundled certificates, Swift Package dependencies, embedded frameworks — all of these are readable immediately and carry intelligence that shapes everything you do next. The binary is the last thing I open, not the first.</p>
+  </div>
+
+  <h3>Unpack and Survey</h3>
+  <div class="cmd-block">
+    <div class="cmd-head">IPA extraction — initial survey</div>
+    <div class="cmd-row"><span class="cmd-t">cp target.ipa target.zip && unzip target.zip -d ipa_extracted/</span><span class="cmd-n">IPA is a ZIP — unpack raw</span></div>
+    <div class="cmd-row"><span class="cmd-t">ls ipa_extracted/Payload/</span><span class="cmd-n">the .app bundle is always inside Payload/</span></div>
+    <div class="cmd-row"><span class="cmd-t">APP="ipa_extracted/Payload/TargetApp.app" && echo $APP</span><span class="cmd-n">set variable to app bundle path</span></div>
+    <div class="cmd-row"><span class="cmd-t">find $APP -type f | sort</span><span class="cmd-n">full file tree — read every filename carefully</span></div>
+    <div class="cmd-row"><span class="cmd-t">find $APP -name "*.plist" | xargs ls -lh</span><span class="cmd-n">all plist files — each one is intelligence</span></div>
+    <div class="cmd-row"><span class="cmd-t">find $APP -name "*.db" -o -name "*.sqlite" -o -name "*.sqlite3"</span><span class="cmd-n">bundled databases — open immediately with sqlite3</span></div>
+    <div class="cmd-row"><span class="cmd-t">find $APP -name "*.json" -o -name "*.xml" | xargs grep -liE 'key|secret|token|password' 2>/dev/null</span><span class="cmd-n">config files containing credentials</span></div>
+    <div class="cmd-row"><span class="cmd-t">find $APP -name "*.p12" -o -name "*.cer" -o -name "*.pem" -o -name "*.der"</span><span class="cmd-n">bundled certificates or private keys</span></div>
+    <div class="cmd-row"><span class="cmd-t">ls $APP/Frameworks/</span><span class="cmd-n">embedded frameworks — each is a separate binary to analyse</span></div>
+    <div class="cmd-row"><span class="cmd-t">ls $APP/PlugIns/ 2>/dev/null</span><span class="cmd-n">app extensions (Share, Today, Notification) — each has own entitlements</span></div>
+  </div>
+
+  <h3>What the IPA File Tree Tells You</h3>
+  <div class="findings">
+    <div class="finding">
+      <div class="f-sev c">CRITICAL</div>
+      <div class="f-body">
+        <div class="f-title">Bundled .p12, .pem, .cer, or .der files</div>
+        <div class="f-detail">A private key or certificate bundled in the app bundle. Extract it: <code>openssl pkcs12 -in cert.p12 -nodes</code> (try empty password first, then common ones). If it's a client certificate for mutual TLS, you can now impersonate the app to the backend API entirely — no authentication token needed, the certificate is the authentication.</div>
+      </div>
+    </div>
+    <div class="finding">
+      <div class="f-sev c">CRITICAL</div>
+      <div class="f-body">
+        <div class="f-title">Bundled SQLite database with sensitive data</div>
+        <div class="f-detail">A pre-populated database that ships with the app. Open it immediately: <code>sqlite3 bundled.db .dump</code>. May contain seed credentials used for first-launch setup, internal user records from development, API endpoints, encryption keys used to bootstrap the app's runtime database, or feature flag configurations revealing internal infrastructure.</div>
+      </div>
+    </div>
+    <div class="finding">
+      <div class="f-sev h">HIGH</div>
+      <div class="f-body">
+        <div class="f-title">GoogleService-Info.plist</div>
+        <div class="f-detail">Firebase configuration plist. Contains API_KEY, PROJECT_ID, DATABASE_URL, STORAGE_BUCKET, GCM_SENDER_ID. Immediately test the Firebase Realtime Database URL for unauthenticated read: <code>curl https://PROJECT_ID.firebaseio.com/.json</code>. If it returns data, the database is publicly readable. Also test Firebase Storage for public access.</div>
+      </div>
+    </div>
+    <div class="finding">
+      <div class="f-sev h">HIGH</div>
+      <div class="f-body">
+        <div class="f-title">Embedded Frameworks/ directory with multiple .framework bundles</div>
+        <div class="f-detail">Each framework is a separate Mach-O binary with its own symbols, strings, and potential vulnerabilities. Third-party SDKs embedded as frameworks retain their debug symbols more reliably than statically-linked code. Check each framework's Info.plist for version numbers, then cross-reference against CVE databases. Common findings: outdated OpenSSL, AFNetworking with known TLS bypass, old Realm versions.</div>
+      </div>
+    </div>
+    <div class="finding">
+      <div class="f-sev m">MEDIUM</div>
+      <div class="f-body">
+        <div class="f-title">PlugIns/ directory — app extensions</div>
+        <div class="f-detail">Each app extension (Share Extension, Today Widget, Notification Extension) is a separate binary with its own Info.plist and entitlements. Extensions often have broader data access than the main app — a Share Extension may have access to the Keychain group, the app group container, or network access that a sandboxed main app wouldn't. Analyse each extension binary independently.</div>
+      </div>
+    </div>
+  </div>
+
+  <h3>Confirm Binary Encryption Status</h3>
+  <p class="body">Before doing any binary analysis, confirm the binary is decrypted. This is the single most common mistake — running class-dump or strings on an encrypted binary and getting garbage, then concluding "there's nothing interesting."</p>
+  <div class="cmd-block">
+    <div class="cmd-head">check FairPlay encryption status</div>
+    <div class="cmd-row"><span class="cmd-t">otool -l "$APP/TargetApp" | grep -A4 LC_ENCRYPTION_INFO</span><span class="cmd-n">check for FairPlay encryption</span></div>
+    <div class="cmd-row"><span class="cmd-t">jtool2 --lc "$APP/TargetApp" | grep crypt</span><span class="cmd-n">alternative — cleaner output</span></div>
+  </div>
+
+  <div class="out-block">
+    <div class="out-label">Encryption status — what each result means</div>
+    <pre class="out-pre">$ otool -l TargetApp | grep -A4 LC_ENCRYPTION_INFO
+
+<span class="c">-- ENCRYPTED (App Store binary):</span>
+cmd LC_ENCRYPTION_INFO_64
+cmdsize 24
+cryptoff  16384
+cryptsize 45678592
+<span class="h">cryptid   1</span>          &lt;-- cryptid=1 means ENCRYPTED — stop here, decrypt first
+
+<span class="c">-- DECRYPTED (developer/enterprise/TestFlight build):</span>
+cmd LC_ENCRYPTION_INFO_64
+cmdsize 24
+cryptoff  16384
+cryptsize 45678592
+<span class="g">cryptid   0</span>          &lt;-- cryptid=0 means NOT ENCRYPTED — proceed with analysis</pre>
+  </div>
+
+  <h3>Decrypt an App Store Binary (Requires Jailbroken Device)</h3>
+  <div class="cmd-block">
+    <div class="cmd-head">runtime decryption — frida-ios-dump</div>
+    <div class="cmd-row"><span class="cmd-t">pip install frida-ios-dump --break-system-packages</span><span class="cmd-n">install the tool</span></div>
+    <div class="cmd-row"><span class="cmd-t">iproxy 2222 44 &</span><span class="cmd-n">tunnel SSH over USB to jailbroken device</span></div>
+    <div class="cmd-row"><span class="cmd-t">python dump.py -H 127.0.0.1 -p 2222 com.example.targetapp</span><span class="cmd-n">dump decrypted IPA from running process</span></div>
+    <div class="cmd-row"><span class="cmd-t"># Alternative: use Clutch on device</span><span class="cmd-n">Clutch -d com.example.targetapp</span></div>
+    <div class="cmd-row"><span class="cmd-t">otool -l decrypted.ipa | grep -A4 LC_ENCRYPTION_INFO</span><span class="cmd-n">verify cryptid=0 after decryption</span></div>
+  </div>
+</div>
+
+<!-- ═══ S3: INFO.PLIST ═══ -->
+<div class="div"></div>
+<div class="section" id="s3">
+  <div class="sec-head">
+    <span class="sec-num">03</span>
+    <div>
+      <h2>Info.plist Analysis</h2>
+      <p class="sec-sub">The Info.plist is the iOS security policy document. Every misconfiguration is declared here in plain text.</p>
+    </div>
+  </div>
+
+  <div class="think">
+    <div class="think-label">// ANALYST THINKING</div>
+    <p>The Info.plist is the first file I read after confirming decryption status. It tells me the app's declared permissions, its URL schemes (deep link attack surface), its ATS configuration (transport security policy), and hints about backend infrastructure through bundle identifiers and associated domains. A 15-minute careful read of the Info.plist gives me a complete threat model skeleton before I've touched the binary at all.</p>
+  </div>
+
+  <h3>Read and Parse the Plist</h3>
+  <div class="cmd-block">
+    <div class="cmd-head">plist reading — handle both binary and XML formats</div>
+    <div class="cmd-row"><span class="cmd-t">plutil -convert xml1 -o - "$APP/Info.plist"</span><span class="cmd-n">convert binary plist to readable XML (macOS built-in)</span></div>
+    <div class="cmd-row"><span class="cmd-t">plutil -p "$APP/Info.plist"</span><span class="cmd-n">pretty-print — faster for quick scan</span></div>
+    <div class="cmd-row"><span class="cmd-t">plutil -convert xml1 -o Info_decoded.plist "$APP/Info.plist"</span><span class="cmd-n">save decoded version to file</span></div>
+    <div class="cmd-row"><span class="cmd-t">grep -E "NSAppTransportSecurity|NSAllowsArbitrary|NSExceptionDomains|CFBundleURL|LSApplicationQueriesSchemes|NSUsage|NSFace|NSCamera|NSLocation|NSMicro|NSContacts|NSHealth|entitlement|Associated" Info_decoded.plist</span><span class="cmd-n">all security-relevant keys in one pass</span></div>
+  </div>
+
+  <h3>App Transport Security — The Most Important ATS Analysis</h3>
+  <p class="body">ATS enforces HTTPS for all network connections by default on iOS 9+. But developers can disable it — globally or per domain. Reading the ATS configuration tells you exactly what transport security the app has, before you intercept a single packet.</p>
+
+  <div class="out-block">
+    <div class="out-label">ATS configurations — from most to least secure</div>
+    <pre class="out-pre"><span class="c">-- WORST: Global ATS disabled entirely</span>
+&lt;key&gt;NSAppTransportSecurity&lt;/key&gt;
+&lt;dict&gt;
+  &lt;key&gt;<span class="h">NSAllowsArbitraryLoads</span>&lt;/key&gt;
+  <span class="h">&lt;true/&gt;</span>           &lt;-- all HTTP allowed to any host, no cert validation enforced
+&lt;/dict&gt;
+
+<span class="c">-- BAD: Arbitrary loads with local exceptions (common "quick fix" pattern)</span>
+&lt;key&gt;NSAppTransportSecurity&lt;/key&gt;
+&lt;dict&gt;
+  &lt;key&gt;<span class="h">NSAllowsArbitraryLoads</span>&lt;/key&gt;&lt;true/&gt;
+  &lt;key&gt;NSExceptionDomains&lt;/key&gt;
+  &lt;dict&gt;
+    &lt;key&gt;api.example.com&lt;/key&gt;
+    &lt;dict&gt;
+      &lt;key&gt;NSExceptionAllowsInsecureHTTPLoads&lt;/key&gt;&lt;false/&gt;
+    &lt;/dict&gt;
+  &lt;/dict&gt;
+&lt;/dict&gt;
+<span class="c">The exception restricts api.example.com — but NSAllowsArbitraryLoads=true</span>
+<span class="c">means all OTHER domains still allow HTTP. The exception is cosmetic.</span>
+
+<span class="c">-- MEDIUM: Per-domain exception that weakens TLS version</span>
+&lt;key&gt;NSExceptionDomains&lt;/key&gt;
+&lt;dict&gt;
+  &lt;key&gt;legacy-api.example.com&lt;/key&gt;
+  &lt;dict&gt;
+    &lt;key&gt;<span class="h">NSExceptionMinimumTLSVersion</span>&lt;/key&gt;
+    <span class="h">&lt;string&gt;TLSv1.0&lt;/string&gt;</span>  &lt;-- allows TLS 1.0 to this domain
+    &lt;key&gt;<span class="h">NSExceptionAllowsInsecureHTTPLoads</span>&lt;/key&gt;<span class="h">&lt;true/&gt;</span>  &lt;-- HTTP allowed
+  &lt;/dict&gt;
+&lt;/dict&gt;
+
+<span class="g">-- CORRECT: No ATS exceptions at all (or only NSAllowsLocalNetworking for dev)</span>
+<span class="g">&lt;!-- NSAppTransportSecurity key absent entirely — defaults enforced --&gt;</span>
+<span class="g">&lt;!-- Or explicitly: --&gt;</span>
+<span class="g">&lt;key&gt;NSAppTransportSecurity&lt;/key&gt;</span>
+<span class="g">&lt;dict&gt;</span>
+<span class="g">  &lt;key&gt;NSAllowsArbitraryLoads&lt;/key&gt;&lt;false/&gt;</span>
+<span class="g">&lt;/dict&gt;</span></pre>
+  </div>
+
+  <h3>URL Schemes — Deep Link Attack Surface</h3>
+  <div class="cmd-block">
+    <div class="cmd-head">URL scheme and associated domain analysis</div>
+    <div class="cmd-row"><span class="cmd-t">plutil -p "$APP/Info.plist" | grep -A20 "CFBundleURLTypes"</span><span class="cmd-n">custom URL schemes — deep link entry points</span></div>
+    <div class="cmd-row"><span class="cmd-t">plutil -p "$APP/Info.plist" | grep -A10 "LSApplicationQueriesSchemes"</span><span class="cmd-n">schemes this app can query — reveals other apps it integrates with</span></div>
+    <div class="cmd-row"><span class="cmd-t">plutil -p "$APP/Info.plist" | grep "associated-domains\|applinks\|webcredentials"</span><span class="cmd-n">Universal Links configuration</span></div>
+  </div>
+
+  <div class="findings">
+    <div class="finding">
+      <div class="f-sev c">CRITICAL</div>
+      <div class="f-body">
+        <div class="f-title">Generic URL scheme (myapp://) without Universal Links fallback</div>
+        <div class="f-detail">Custom URL schemes (myapp://, bankapp://) can be registered by any app on the device — there's no ownership validation. A malicious app that registers the same scheme intercepts the deep links. Universal Links (https://example.com/open) are cryptographically bound to your domain via apple-app-site-association. Find URL schemes in Info.plist, then check whether the same paths are also registered as Universal Links.</div>
+      </div>
+    </div>
+    <div class="finding">
+      <div class="f-sev h">HIGH</div>
+      <div class="f-body">
+        <div class="f-title">NSAllowsArbitraryLoads = true</div>
+        <div class="f-detail">Global ATS disable. Every network connection in the app can now use plain HTTP. Any developer on the team can add an HTTP URL and it will work silently. More importantly for testing: Burp proxy works without installing a CA certificate because ATS validation is entirely disabled — just set the proxy and intercept.</div>
+      </div>
+    </div>
+    <div class="finding">
+      <div class="f-sev m">MEDIUM</div>
+      <div class="f-body">
+        <div class="f-title">Excessive usage descriptions (NSLocationAlwaysUsageDescription, NSContactsUsageDescription on a utility app)</div>
+        <div class="f-detail">Usage descriptions are required before requesting sensitive permissions. Reading them tells you what data the app accesses. Cross-reference the permissions requested against the app's stated functionality. A flashlight app requesting NSContactsUsageDescription is data collection beyond stated purpose — a privacy finding and potentially a compliance issue (GDPR, CCPA).</div>
+      </div>
+    </div>
+  </div>
+
+  <h3>Entitlements — What the App Is Actually Allowed to Do</h3>
+  <p class="body">Entitlements define the app's sandbox capabilities — what Keychain groups it can access, whether it can use iCloud, what push notification topics it subscribes to, whether it has inter-app communication capabilities. Read them carefully.</p>
+  <div class="cmd-block">
+    <div class="cmd-head">extract and read entitlements</div>
+    <div class="cmd-row"><span class="cmd-t">codesign -d --entitlements :- "$APP/TargetApp"</span><span class="cmd-n">extract embedded entitlements from binary</span></div>
+    <div class="cmd-row"><span class="cmd-t">jtool2 --ent "$APP/TargetApp"</span><span class="cmd-n">alternative — cleaner output</span></div>
+    <div class="cmd-row"><span class="cmd-t">codesign -d --entitlements :- "$APP/TargetApp" | grep -E "keychain|group|icloud|push|com.apple"</span><span class="cmd-n">filter security-relevant entitlements</span></div>
+  </div>
+
+  <div class="out-block">
+    <div class="out-label">Entitlements — what each key reveals</div>
+    <pre class="out-pre">&lt;?xml version="1.0" encoding="UTF-8"?&gt;
+&lt;!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" ...&gt;
+&lt;plist version="1.0"&gt;
+&lt;dict&gt;
+  &lt;key&gt;application-identifier&lt;/key&gt;
+  &lt;string&gt;TEAMID.com.example.bankapp&lt;/string&gt;
+
+  &lt;key&gt;<span class="y">keychain-access-groups</span>&lt;/key&gt;
+  &lt;array&gt;
+    &lt;string&gt;TEAMID.com.example.bankapp&lt;/string&gt;
+    <span class="h">&lt;string&gt;TEAMID.com.example.shared&lt;/string&gt;</span>  &lt;-- shared with OTHER apps
+  &lt;/array&gt;
+  <span class="c">→ The shared Keychain group means other apps from same team can read</span>
+  <span class="c">  tokens stored in TEAMID.com.example.shared — check what's stored there</span>
+
+  &lt;key&gt;<span class="y">com.apple.developer.associated-domains</span>&lt;/key&gt;
+  &lt;array&gt;
+    &lt;string&gt;applinks:example.com&lt;/string&gt;
+    &lt;string&gt;webcredentials:example.com&lt;/string&gt;
+  &lt;/array&gt;
+  <span class="c">→ Universal Links registered for example.com</span>
+  <span class="c">→ webcredentials enables Password AutoFill — check AASA file is correct</span>
+
+  <span class="h">&lt;key&gt;get-task-allow&lt;/key&gt;&lt;true/&gt;</span>
+  <span class="c">→ Allows debuggers to attach — should be false in production</span>
+  <span class="c">  Equivalent to Android's debuggable=true</span>
+
+  &lt;key&gt;<span class="y">aps-environment&lt;/key&gt;</span>
+  &lt;string&gt;production&lt;/string&gt;
+&lt;/dict&gt;&lt;/plist&gt;</pre>
+  </div>
+</div>
+
+<!-- ═══ S4: MACH-O ═══ -->
+<div class="div"></div>
+<div class="section" id="s4">
+  <div class="sec-head">
+    <span class="sec-num">04</span>
+    <div>
+      <h2>Mach-O Binary Analysis</h2>
+      <p class="sec-sub">Binary protections, architecture, linked libraries, and symbol table — all readable without disassembly.</p>
+    </div>
+  </div>
+
+  <div class="think">
+    <div class="think-label">// ANALYST THINKING</div>
+    <p>Before opening a disassembler, I extract everything I can from the binary's metadata. The load commands tell me what frameworks are linked, what security mitigations are enabled, and the binary's architecture. The symbol table — even partially stripped — reveals function names that are goldmines for understanding what the app does. The strings table catches hardcoded secrets without any disassembly at all. I treat otool and nm as my first-pass analysis tools; the disassembler only comes out when I need to understand specific logic.</p>
+  </div>
+
+  <h3>Binary Protections — Check These First</h3>
+  <div class="cmd-block">
+    <div class="cmd-head">security mitigations analysis</div>
+    <div class="cmd-row"><span class="cmd-t">otool -hv "$APP/TargetApp" | grep -E "PIE|DYLIB|TWOLEVEL"</span><span class="cmd-n">check header flags — PIE = ASLR enabled</span></div>
+    <div class="cmd-row"><span class="cmd-t">otool -Iv "$APP/TargetApp" | grep "stack_chk"</span><span class="cmd-n">stack canaries — stack_chk_guard/stack_chk_fail present?</span></div>
+    <div class="cmd-row"><span class="cmd-t">otool -Iv "$APP/TargetApp" | grep "objc_release\|objc_autorelease"</span><span class="cmd-n">ARC enabled — automatic reference counting</span></div>
+    <div class="cmd-row"><span class="cmd-t">jtool2 -h "$APP/TargetApp"</span><span class="cmd-n">full header analysis in one command</span></div>
+    <div class="cmd-row"><span class="cmd-t">MobSF scan (via web UI) → Binary Analysis tab</span><span class="cmd-n">automated protection check with pass/fail summary</span></div>
+  </div>
+
+  <div class="out-block">
+    <div class="out-label">Binary protection analysis — what each flag means</div>
+    <pre class="out-pre">$ otool -hv TargetApp | grep -E "MH_|PIE"
+
+Mach header:
+      magic   cputype cpusubtype  caps  filetype  ncmds sizeofcmds  flags
+MH_MAGIC_64   ARM64        ALL  0x00    EXECUTE     42       4312  <span class="g">NOUNDEFS DYLDLINK TWOLEVEL PIE</span>
+
+<span class="g">PIE present</span>       → ASLR enabled — binary loads at random address each launch
+                    Cannot use hardcoded addresses in exploits
+<span class="y">NOUNDEFS</span>          → all symbols resolved at link time (standard)
+<span class="y">DYLDLINK</span>          → dynamic linker used (standard)
+
+$ otool -Iv TargetApp | grep stack_chk
+<span class="g">_stack_chk_guard     stack canaries enabled</span>    → buffer overflows harder to exploit
+<span class="h"># If absent:</span>
+<span class="h">_stack_chk_guard NOT found → no stack canaries — binary compiled without -fstack-protector</span>
+
+$ otool -hv TargetApp (checking for ALLOW_STACK_EXECUTION flag)
+<span class="h">ALLOW_STACK_EXECUTION present → stack is executable — ROP/shellcode much easier</span>
+<span class="g">Absent (normal) → stack not executable — standard W^X protection</span></pre>
+  </div>
+
+  <h3>Linked Libraries — SDK Fingerprinting</h3>
+  <div class="cmd-block">
+    <div class="cmd-head">otool — dynamic library dependencies</div>
+    <div class="cmd-row"><span class="cmd-t">otool -L "$APP/TargetApp"</span><span class="cmd-n">list all dynamically linked libraries and frameworks</span></div>
+    <div class="cmd-row"><span class="cmd-t">otool -L "$APP/TargetApp" | grep -v "/usr/lib\|/System\|/Developer"</span><span class="cmd-n">filter to third-party only</span></div>
+    <div class="cmd-row"><span class="cmd-t">ls "$APP/Frameworks/" | sed 's/.framework//'</span><span class="cmd-n">embedded frameworks = statically versioned third-party code</span></div>
+  </div>
+
+  <div class="out-block">
+    <div class="out-label">otool -L output — reading the dependency list</div>
+    <pre class="out-pre">$ otool -L TargetApp
+
+/usr/lib/libobjc.A.dylib             <span class="c">system — skip</span>
+/usr/lib/libSystem.B.dylib           <span class="c">system — skip</span>
+/System/Library/Frameworks/...       <span class="c">system — skip</span>
+
+<span class="y">&#64;rpath/Alamofire.framework/Alamofire</span>          &lt;-- HTTP networking library
+<span class="y">&#64;rpath/Firebase.framework/Firebase</span>             &lt;-- Firebase SDK
+<span class="y">&#64;rpath/Realm.framework/Realm</span>                  &lt;-- Realm database — check version for CVEs
+<span class="h">&#64;rpath/AFNetworking.framework/AFNetworking</span>    &lt;-- older HTTP lib — known TLS bypass CVEs
+<span class="y">&#64;rpath/Stripe.framework/Stripe</span>                &lt;-- payment processing
+<span class="y">&#64;rpath/Amplitude.framework/Amplitude</span>          &lt;-- analytics
+
+<span class="c">→ AFNetworking: check version in Frameworks/AFNetworking.framework/Info.plist</span>
+<span class="c">  CVE-2015-3428 (certificate pinning bypass), multiple others depending on version</span>
+<span class="c">→ Realm: check for encryption — unencrypted Realm DB is fully readable on jailbroken device</span>
+<span class="c">→ Stripe: confirms payment processing — check for client-side validation that server should do</span></pre>
+  </div>
+
+  <h3>String Extraction — The Fastest Secrets Hunt</h3>
+  <div class="cmd-block">
+    <div class="cmd-head">strings — extract all from binary and frameworks</div>
+    <div class="cmd-row"><span class="cmd-t">strings "$APP/TargetApp" | grep -iE 'key|secret|token|password|api|auth|bearer' | sort -u</span><span class="cmd-n">credential patterns in main binary</span></div>
+    <div class="cmd-row"><span class="cmd-t">strings "$APP/TargetApp" | grep -E '^https?://' | sort -u</span><span class="cmd-n">hardcoded URLs — find undocumented endpoints</span></div>
+    <div class="cmd-row"><span class="cmd-t">strings "$APP/TargetApp" | grep -E 'AKIA[0-9A-Z]{16}'</span><span class="cmd-n">AWS access key exact pattern</span></div>
+    <div class="cmd-row"><span class="cmd-t">strings "$APP/TargetApp" | grep -E 'sk_live_|sk_test_|pk_live_'</span><span class="cmd-n">Stripe keys</span></div>
+    <div class="cmd-row"><span class="cmd-t">strings "$APP/TargetApp" | grep -E 'eyJ[A-Za-z0-9_-]{10,}'</span><span class="cmd-n">JWT tokens hardcoded in binary</span></div>
+    <div class="cmd-row"><span class="cmd-t">strings "$APP/TargetApp" | grep -E 'BEGIN (RSA |EC |)PRIVATE KEY'</span><span class="cmd-n">PEM private key material</span></div>
+    <div class="cmd-row"><span class="cmd-t">for fw in "$APP/Frameworks/"*.framework; do echo "=== $fw ==="; strings "$fw/$(basename $fw .framework)" | grep -iE 'key|secret|token|password'; done</span><span class="cmd-n">same search across all embedded frameworks</span></div>
+  </div>
+</div>
+
+<!-- ═══ S5: CLASS DUMP ═══ -->
+<div class="div"></div>
+<div class="section" id="s5">
+  <div class="sec-head">
+    <span class="sec-num">05</span>
+    <div>
+      <h2>Class Dumping — Reconstructing the API</h2>
+      <p class="sec-sub">class-dump reconstructs Objective-C headers. Swift symbols demangle to full method signatures. Together they give you the app's internal API without disassembly.</p>
+    </div>
+  </div>
+
+  <div class="think">
+    <div class="think-label">// ANALYST THINKING</div>
+    <p>Class dumping is the iOS equivalent of reading decompiled Java in Android — but even more informative in some ways. Objective-C method names are fully preserved in the binary because the runtime needs them for dynamic dispatch. A class-dump output gives you every class name, every property, every method signature. Even heavily "obfuscated" ObjC code often has meaningful method names because the developer didn't know to obfuscate them. I read the class dump the same way I read a decompiled package structure: map the territory first, then dig into the classes that matter for security.</p>
+    <p>Swift is different — symbols are name-mangled but demangleable. Swift method names often contain full type information in the mangled form, making demangled symbols surprisingly readable.</p>
+  </div>
+
+  <h3>Objective-C Class Dump</h3>
+  <div class="cmd-block">
+    <div class="cmd-head">class-dump — full header reconstruction</div>
+    <div class="cmd-row"><span class="cmd-t">class-dump -H "$APP/TargetApp" -o ./headers/</span><span class="cmd-n">dump all ObjC headers to directory — one file per class</span></div>
+    <div class="cmd-row"><span class="cmd-t">class-dump "$APP/TargetApp" > all_headers.txt</span><span class="cmd-n">single file — easier to grep</span></div>
+    <div class="cmd-row"><span class="cmd-t">grep -iE "auth|login|session|token|password|pin|biometric|keychain|crypt|cipher|network|pinning|cert" all_headers.txt</span><span class="cmd-n">find security-relevant classes and methods immediately</span></div>
+    <div class="cmd-row"><span class="cmd-t">grep "^&#64;interface" all_headers.txt | sort</span><span class="cmd-n">list all class names — read them like a package tree</span></div>
+    <div class="cmd-row"><span class="cmd-t">grep -A30 "&#64;interface AuthManager" all_headers.txt</span><span class="cmd-n">read specific class header in full</span></div>
+  </div>
+
+  <div class="out-block">
+    <div class="out-label">class-dump output — reading security-relevant headers</div>
+    <pre class="out-pre"><span class="c">// HIGH VALUE CLASSES — found by grepping class names:</span>
+<span class="w">&#64;interface AuthManager : NSObject</span>
+<span class="g">&#64;property(nonatomic, copy) NSString *authToken;</span>          <span class="c">← stored as plain NSString?</span>
+<span class="g">&#64;property(nonatomic, copy) NSString *refreshToken;</span>
+<span class="g">&#64;property(nonatomic) BOOL isAuthenticated;</span>
+<span class="y">- (void)loginWithUsername:(NSString *)username password:(NSString *)password;</span>
+<span class="y">- (void)storeTokenInKeychain:(NSString *)token;</span>
+<span class="y">- (NSString *)retrieveTokenFromKeychain;</span>
+<span class="h">- (BOOL)validatePinLocally:(NSString *)pin;</span>  <span class="c">← client-side PIN validation — critical</span>
+<span class="y">- (void)refreshAccessToken;</span>
+&#64;end
+
+<span class="w">&#64;interface NetworkManager : NSObject</span>
+<span class="h">- (void)disableSSLValidation;</span>                <span class="c">← method named this — definitely check it</span>
+<span class="y">- (void)setBaseURL:(NSString *)url;</span>
+<span class="y">- (void)addAuthHeader:(NSURLRequest *)request;</span>
+&#64;end
+
+<span class="w">&#64;interface CryptoHelper : NSObject</span>
+<span class="h">- (NSData *)encryptData:(NSData *)data withKey:(NSString *)key;</span>
+<span class="c">              ↑ key passed as NSString — likely hardcoded at call site</span>
+<span class="y">- (NSData *)decryptData:(NSData *)data withKey:(NSString *)key;</span>
+&#64;end
+
+<span class="c">Findings from headers alone:</span>
+<span class="c">1. validatePinLocally — PIN checked client-side, hook to return YES with any PIN</span>
+<span class="c">2. disableSSLValidation — this method name implies it exists and is callable</span>
+<span class="c">3. CryptoHelper key as NSString — find where it's called to see if key is hardcoded</span></pre>
+  </div>
+
+  <h3>Swift Symbol Analysis</h3>
+  <div class="cmd-block">
+    <div class="cmd-head">Swift — demangle symbols for readable method names</div>
+    <div class="cmd-row"><span class="cmd-t">nm "$APP/TargetApp" | grep " T " | grep -v "OBJC_"</span><span class="cmd-n">text segment symbols — Swift functions</span></div>
+    <div class="cmd-row"><span class="cmd-t">nm "$APP/TargetApp" | grep " T " | swift demangle | grep -iE 'auth|login|token|password|crypt|pin|network|session'</span><span class="cmd-n">demangle + filter for security-relevant methods</span></div>
+    <div class="cmd-row"><span class="cmd-t">nm "$APP/TargetApp" | grep " T " | swift demangle > swift_symbols.txt && wc -l swift_symbols.txt</span><span class="cmd-n">save all demangled symbols</span></div>
+    <div class="cmd-row"><span class="cmd-t">grep -iE "class|struct|enum" swift_symbols.txt | grep -iE "auth|crypt|network|session|key|token" | head -40</span><span class="cmd-n">find security-relevant Swift types</span></div>
+  </div>
+
+  <div class="out-block">
+    <div class="out-label">Demangled Swift symbols — what they reveal</div>
+    <pre class="out-pre">$ nm TargetApp | grep " T " | swift demangle | grep -iE 'auth|token|crypt'
+
+<span class="g">BankApp.AuthViewModel.login(username: Swift.String, password: Swift.String) -> ()</span>
+<span class="g">BankApp.TokenManager.saveToken(_: Swift.String, toKeychain: Swift.Bool) -> Swift.Bool</span>
+<span class="h">BankApp.TokenManager.saveToken(_: Swift.String, toUserDefaults: Swift.Bool) -> Swift.Bool</span>
+<span class="c">                                                       ↑ saving token to UserDefaults — not Keychain!</span>
+<span class="g">BankApp.CryptoService.encrypt(data: Foundation.Data, key: Swift.String) -> Foundation.Data?</span>
+<span class="h">BankApp.PinValidator.validatePin(_: Swift.String) -> Swift.Bool</span>
+<span class="c">                     ↑ returns Bool — hook with Frida to always return true</span>
+<span class="g">BankApp.NetworkClient.configureSession() -> ()</span>
+<span class="h">BankApp.NetworkClient.disableCertificateValidation() -> ()</span>
+<span class="c">                       ↑ this function exists in the binary — find where it's called</span></pre>
+  </div>
+
+  <div class="callout cr">
+    <span class="callout-icon">🔴</span>
+    <span>A method named <code>validatePinLocally</code>, <code>validatePin</code>, or <code>checkPinCode</code> returning a Bool is an immediate critical finding candidate. It means PIN validation happens on the device, not server-side. Hook it with Frida to return <code>true</code> and you bypass PIN authentication entirely with no knowledge of the actual PIN.</span>
+  </div>
+</div>
+
+<!-- ═══ S6: HARDCODED SECRETS ═══ -->
+<div class="div"></div>
+<div class="section" id="s6">
+  <div class="sec-head">
+    <span class="sec-num">06</span>
+    <div>
+      <h2>Hardcoded Secrets</h2>
+      <p class="sec-sub">Swift string literals compile directly into the Mach-O binary as plaintext. They are always extractable.</p>
+    </div>
+  </div>
+
+  <div class="think">
+    <div class="think-label">// ANALYST THINKING</div>
+    <p>Unlike Android where BuildConfig.java is the obvious place to start, iOS apps scatter secrets more organically — a Swift constant defined inline, a plist file in the bundle, a JSON config loaded from Assets.xcassets, a hardcoded string in an initialiser. The systematic approach covers three layers: strings extraction from the binary itself (catches everything in Swift/ObjC string literals), plist file enumeration (catches config files), and then — for confirmed interesting functions — Hopper or Ghidra to see exactly how a string is used in context.</p>
+  </div>
+
+  <h3>Bundled Plist Files — Readable Config</h3>
+  <div class="cmd-block">
+    <div class="cmd-head">enumerate and read all plist files</div>
+    <div class="cmd-row"><span class="cmd-t">find "$APP" -name "*.plist" -exec plutil -convert xml1 -o {}.xml {} \;</span><span class="cmd-n">batch convert all plists to XML</span></div>
+    <div class="cmd-row"><span class="cmd-t">find "$APP" -name "*.plist.xml" | xargs grep -liE 'key|secret|token|password|api|endpoint'</span><span class="cmd-n">which plists have credentials</span></div>
+    <div class="cmd-row"><span class="cmd-t">plutil -p "$APP/GoogleService-Info.plist" 2>/dev/null</span><span class="cmd-n">Firebase config — always check if present</span></div>
+    <div class="cmd-row"><span class="cmd-t">find "$APP" -name "*.plist" | xargs -I{} sh -c 'echo "=== {} ==="; plutil -p "{}" 2>/dev/null | grep -iE "key|secret|api|url|endpoint|token"'</span><span class="cmd-n">comprehensive plist secret scan</span></div>
+  </div>
+
+  <h3>Binary String Extraction — Comprehensive Pattern Search</h3>
+  <div class="cmd-block">
+    <div class="cmd-head">strings — systematic secret hunting</div>
+    <div class="cmd-row"><span class="cmd-t">strings "$APP/TargetApp" | grep -E 'AIza[0-9A-Za-z\-_]{35}'</span><span class="cmd-n">Google API key exact regex</span></div>
+    <div class="cmd-row"><span class="cmd-t">strings "$APP/TargetApp" | grep -E 'AKIA[0-9A-Z]{16}'</span><span class="cmd-n">AWS access key ID</span></div>
+    <div class="cmd-row"><span class="cmd-t">strings "$APP/TargetApp" | grep -E 'sk_live_|pk_live_|sk_test_'</span><span class="cmd-n">Stripe API keys — live vs test</span></div>
+    <div class="cmd-row"><span class="cmd-t">strings "$APP/TargetApp" | grep -iE '^[A-Za-z0-9+/]{40,}={0,2}$'</span><span class="cmd-n">long base64 strings — likely encoded keys</span></div>
+    <div class="cmd-row"><span class="cmd-t">strings "$APP/TargetApp" | grep -E '^https?://' | grep -iE 'admin|internal|debug|test|dev|staging'</span><span class="cmd-n">non-production endpoints left in production binary</span></div>
+    <div class="cmd-row"><span class="cmd-t">strings "$APP/TargetApp" | grep -E '[0-9a-f]{32,64}' | grep -v "^0\+$"</span><span class="cmd-n">hex strings — potential hardcoded keys or hashes</span></div>
+    <div class="cmd-row"><span class="cmd-t">find "$APP" -name "*.json" | xargs grep -iE '"apiKey"|"secret"|"token"|"password"|"key"'</span><span class="cmd-n">JSON config files — common in React Native and hybrid apps</span></div>
+  </div>
+
+  <div class="out-block">
+    <div class="out-label">GoogleService-Info.plist — what to look at and what to test</div>
+    <pre class="out-pre">$ plutil -p GoogleService-Info.plist
+
+{
+  "API_KEY" =&gt; <span class="h">"AIzaSyBxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"</span>
+  "GCM_SENDER_ID" =&gt; "123456789012"
+  "BUNDLE_ID" =&gt; "com.example.bankapp"
+  "PROJECT_ID" =&gt; <span class="y">"bankapp-prod-12345"</span>
+  "STORAGE_BUCKET" =&gt; <span class="y">"bankapp-prod-12345.appspot.com"</span>
+  "DATABASE_URL" =&gt; <span class="y">"https://bankapp-prod-12345.firebaseio.com"</span>
+  "IS_ADS_ENABLED" =&gt; 0
+  "IS_ANALYTICS_ENABLED" =&gt; 1
+  "IS_APPINVITE_ENABLED" =&gt; 1
+  "IS_GCM_ENABLED" =&gt; 1
+}
+
+<span class="c">Tests to run immediately from this config:</span>
+<span class="c">1. curl https://bankapp-prod-12345.firebaseio.com/.json</span>
+<span class="c">   → if returns JSON: unauthenticated database read — CRITICAL</span>
+<span class="c">2. curl https://bankapp-prod-12345.appspot.com/</span>
+<span class="c">   → check Firebase Storage rules for public access</span>
+<span class="c">3. Test API_KEY restrictions:</span>
+<span class="c">   curl "https://maps.googleapis.com/maps/api/geocode/json?address=test&key=AIzaSy..."</span>
+<span class="c">   → if returns results: API key is unrestricted — can be used for unauthorized billing</span></pre>
+  </div>
+</div>
+
+<!-- ═══ S7: CRYPTOGRAPHY ═══ -->
+<div class="div"></div>
+<div class="section" id="s7">
+  <div class="sec-head">
+    <span class="sec-num">07</span>
+    <div>
+      <h2>Cryptography Analysis</h2>
+      <p class="sec-sub">CommonCrypto, CryptoKit, and third-party libraries — find them in the binary, read how they're used.</p>
+    </div>
+  </div>
+
+  <div class="think">
+    <div class="think-label">// ANALYST THINKING</div>
+    <p>iOS crypto analysis follows the same logic as Android: find the API calls, check the algorithm, mode, key source, and IV. The Apple APIs are different — CommonCrypto for older ObjC code, CryptoKit for newer Swift. CommonCrypto calls like CCCrypt() take the algorithm, mode, and key as parameters — readable directly in the disassembler. CryptoKit uses a more modern typed API where misuse is harder but still possible (hardcoded keys, wrong symmetric algorithm choice, no authentication).</p>
+  </div>
+
+  <h3>Find Cryptographic API Calls</h3>
+  <div class="cmd-block">
+    <div class="cmd-head">locate crypto usage in binary</div>
+    <div class="cmd-row"><span class="cmd-t">nm "$APP/TargetApp" | grep -iE 'CCCrypt|CCKeyDerivation|CCHmac|SecKey|SecItem'</span><span class="cmd-n">CommonCrypto and Keychain API references</span></div>
+    <div class="cmd-row"><span class="cmd-t">otool -Iv "$APP/TargetApp" | grep -iE 'CCCrypt|AES|MD5|SHA|kCCAlgorithm|kCCMode'</span><span class="cmd-n">imported crypto symbols</span></div>
+    <div class="cmd-row"><span class="cmd-t">strings "$APP/TargetApp" | grep -iE 'AES|DES|ECB|CBC|MD5|SHA1|HMAC|kCCAlgorithm|kCCMode'</span><span class="cmd-n">algorithm name strings</span></div>
+    <div class="cmd-row"><span class="cmd-t">nm "$APP/TargetApp" | swift demangle | grep -iE 'AES|Cipher|Crypto|encrypt|decrypt|hash|digest'</span><span class="cmd-n">Swift CryptoKit method references</span></div>
+  </div>
+
+  <h3>CommonCrypto — Reading CCCrypt Calls in Hopper</h3>
+  <p class="body">The <code>CCCrypt</code> function is the core CommonCrypto encryption API. Its signature exposes everything about how the app is using cryptography:</p>
+
+  <div class="out-block">
+    <div class="out-label">CCCrypt function signature — what each parameter means for security</div>
+    <pre class="out-pre">CCCrypt(
+    CCOperation    op,           // kCCEncrypt or kCCDecrypt
+    CCAlgorithm    alg,          // kCCAlgorithmAES=0, kCCAlgorithmDES=1, kCCAlgorithm3DES=2
+    CCOptions      options,      // kCCOptionECBMode=2 ← ECB mode flag
+    const void    *key,          // key material — where does this come from?
+    size_t         keyLength,    // kCCKeySizeAES128=16, kCCKeySizeAES256=32
+    const void    *iv,           // IV — is this NULL? static? random?
+    const void    *dataIn,       // plaintext
+    size_t         dataInLength,
+    void          *dataOut,      // ciphertext output
+    size_t         dataOutAvailable,
+    size_t        *dataOutMoved
+);
+
+<span class="c">In Hopper, find the CCCrypt call. Look at what's passed for:</span>
+
+<span class="h">alg = 0 (kCCAlgorithmAES)</span>         → algorithm is fine
+<span class="h">options = 2 (kCCOptionECBMode)</span>     → ECB mode — CRITICAL — never acceptable
+<span class="c">OR</span>
+<span class="h">options = 1 (kCCOptionPKCS7Padding)</span>
+<span class="h">iv = 0x0 or pointer to static bytes</span> → NULL IV or static IV — CRITICAL
+
+<span class="h">key = pointer to string literal "secretkey1234567"</span> → hardcoded key — CRITICAL
+
+<span class="g">Correct pattern:</span>
+<span class="g">alg = 0 (AES), options = 0 (CBC with manual IV),</span>
+<span class="g">iv = SecRandomCopyBytes(kSecRandomDefault, 16, randomIV, &amp;err)</span>
+<span class="g">key from SecKeyCreateRandomKey or SecKeyGeneratePair</span></pre>
+  </div>
+
+  <h3>Keychain — Right Place, Often Wrong Configuration</h3>
+  <div class="cmd-block">
+    <div class="cmd-head">find Keychain usage in binary</div>
+    <div class="cmd-row"><span class="cmd-t">nm "$APP/TargetApp" | grep -E "SecItemAdd|SecItemCopyMatching|SecItemUpdate|SecItemDelete"</span><span class="cmd-n">Keychain API calls present in binary</span></div>
+    <div class="cmd-row"><span class="cmd-t">strings "$APP/TargetApp" | grep -iE 'kSecAttrAccessible|kSecAttrService|kSecAttrAccount|kSecClass'</span><span class="cmd-n">Keychain accessibility flags — the critical ones</span></div>
+    <div class="cmd-row"><span class="cmd-t">strings "$APP/TargetApp" | grep "kSecAttrAccessible"</span><span class="cmd-n">what accessibility level is the app using?</span></div>
+  </div>
+
+  <div class="out-block">
+    <div class="out-label">Keychain accessibility levels — most to least secure</div>
+    <pre class="out-pre"><span class="h">kSecAttrAccessibleAlways</span>
+→ Item readable even when device is LOCKED
+→ Most insecure — a stolen locked device exposes all items with this flag
+→ Deprecated in iOS 12 but still works and still used
+
+<span class="h">kSecAttrAccessibleAlwaysThisDeviceOnly</span>
+→ Same as Always but won't transfer to new device
+→ Still readable when locked — still wrong for sensitive data
+
+<span class="y">kSecAttrAccessibleAfterFirstUnlock</span>
+→ Accessible after first unlock following reboot — not re-locked on screen lock
+→ Used by apps needing background access to secrets
+→ If app doesn't need background access, this is unnecessarily permissive
+
+<span class="y">kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly</span>
+→ Same but no backup/transfer — better for most use cases
+
+<span class="g">kSecAttrAccessibleWhenUnlocked</span>           → correct for most apps
+<span class="g">kSecAttrAccessibleWhenUnlockedThisDeviceOnly</span> → correct — no backup
+
+<span class="g">kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly</span>
+→ Most secure — item deleted if passcode removed, not backed up
+→ Best for high-value secrets like biometric-protected auth tokens
+
+<span class="c">Finding kSecAttrAccessibleAlways or kSecAttrAccessibleAfterFirstUnlock</span>
+<span class="c">for authentication tokens is a HIGH finding — accessible on locked devices.</span></pre>
+  </div>
+</div>
+
+<!-- ═══ S8: NETWORK & ATS ═══ -->
+<div class="div"></div>
+<div class="section" id="s8">
+  <div class="sec-head">
+    <span class="sec-num">08</span>
+    <div>
+      <h2>Network &amp; Transport Security</h2>
+      <p class="sec-sub">ATS configuration, SSL pinning implementation, and API surface discovery from the binary.</p>
+    </div>
+  </div>
+
+  <div class="think">
+    <div class="think-label">// ANALYST THINKING</div>
+    <p>iOS network security analysis has two layers: the declarative ATS policy in Info.plist (which I've already read in Section 3) and the programmatic pinning implementation in the binary. Finding NSAllowsArbitraryLoads=true in the plist is step one. Step two is verifying whether the app implements any pinning programmatically — because ATS disabled means Burp proxy works without Frida. If ATS is enabled and there's pinning, I need to understand exactly how the pinning is implemented to know which bypass technique to use.</p>
+  </div>
+
+  <h3>Find SSL Pinning Implementation</h3>
+  <div class="cmd-block">
+    <div class="cmd-head">locate pinning in binary</div>
+    <div class="cmd-row"><span class="cmd-t">nm "$APP/TargetApp" | grep -iE 'pinning\|certificate\|ServerTrust\|didReceiveChallenge\|TrustEvaluate'</span><span class="cmd-n">pinning-related symbols</span></div>
+    <div class="cmd-row"><span class="cmd-t">class-dump "$APP/TargetApp" | grep -iE 'pinning\|certificate\|trust\|challenge' -A5</span><span class="cmd-n">pinning methods in ObjC headers</span></div>
+    <div class="cmd-row"><span class="cmd-t">strings "$APP/TargetApp" | grep -E '[A-Za-z0-9+/]{43}='</span><span class="cmd-n">base64-encoded SHA-256 hashes — pinned certificate hashes</span></div>
+    <div class="cmd-row"><span class="cmd-t">strings "$APP/TargetApp" | grep -E '^sha256/'</span><span class="cmd-n">Alamofire-style pin hashes (sha256/HASH)</span></div>
+    <div class="cmd-row"><span class="cmd-t">otool -Iv "$APP/TargetApp" | grep -iE 'URLSession\|NSURLSession\|SecTrust\|SSLHandshake'</span><span class="cmd-n">URLSession delegate methods — where pinning lives</span></div>
+  </div>
+
+  <div class="out-block">
+    <div class="out-label">URLSession pinning implementation patterns — correct vs bypassable</div>
+    <pre class="out-pre"><span class="c">// CORRECTLY IMPLEMENTED PINNING — URLSession delegate:</span>
+func urlSession(_ session: URLSession,
+                didReceive challenge: URLAuthenticationChallenge,
+                completionHandler: &#64;escaping (URLSession.AuthChallengeDisposition, URLCredential?) -&gt; Void) {
+
+    guard challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
+          let serverTrust = challenge.protectionSpace.serverTrust else {
+        completionHandler(.cancelAuthenticationChallenge, nil)
+        return
+    }
+
+    let pinnedHash = "sha256/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+    if serverCertificateHash(serverTrust) == pinnedHash {
+        completionHandler(.useCredential, URLCredential(trust: serverTrust))
+    } else {
+        completionHandler(.cancelAuthenticationChallenge, nil)  <span class="g">← rejects on mismatch</span>
+    }
+}
+
+<span class="c">// BROKEN — common bypass patterns to look for in the binary:</span>
+
+<span class="h">// 1. Empty challenge handler — accepts everything</span>
+<span class="h">completionHandler(.useCredential, URLCredential(trust: serverTrust))</span>
+<span class="c">   // Called unconditionally — no pin check at all despite method existing</span>
+
+<span class="h">// 2. Exception swallowing</span>
+<span class="h">} catch {</span>
+<span class="h">    completionHandler(.useCredential, URLCredential(trust: serverTrust)) // fallback</span>
+<span class="h">}</span>
+
+<span class="h">// 3. DEBUG flag that disables pinning — check if reachable in release build</span>
+<span class="h">if ProcessInfo.processInfo.environment["DISABLE_SSL_PINNING"] != nil {</span>
+<span class="h">    completionHandler(.useCredential, URLCredential(trust: serverTrust))</span>
+<span class="h">}</span></pre>
+  </div>
+
+  <h3>API Surface Discovery — Find All Endpoints Statically</h3>
+  <div class="cmd-block">
+    <div class="cmd-head">URL and endpoint extraction</div>
+    <div class="cmd-row"><span class="cmd-t">strings "$APP/TargetApp" | grep -E '^https?://' | sort -u</span><span class="cmd-n">all hardcoded URLs in the binary</span></div>
+    <div class="cmd-row"><span class="cmd-t">strings "$APP/TargetApp" | grep -E '"/[a-z]' | grep -E '(api|v[0-9]+|/user|/account|/admin|/auth|/token)' | sort -u</span><span class="cmd-n">API path strings</span></div>
+    <div class="cmd-row"><span class="cmd-t">strings "$APP/TargetApp" | grep -iE 'admin|internal|debug|superuser|backdoor' | grep -E '^/' </span><span class="cmd-n">privileged endpoint paths</span></div>
+    <div class="cmd-row"><span class="cmd-t">find "$APP" -name "*.plist" -exec plutil -p {} \; 2>/dev/null | grep -iE 'baseURL\|apiURL\|endpoint\|host\|server'</span><span class="cmd-n">URLs in plist config files</span></div>
+  </div>
+
+  <div class="callout ti">
+    <span class="callout-icon">✔</span>
+    <span>If the app uses <strong>Alamofire</strong>, find the <code>Session</code> or <code>SessionManager</code> initialisation in Hopper. The <code>serverTrustManager</code> parameter holds the pinning configuration. If it's nil or not passed, there's no pinning regardless of what the Info.plist says. Check the Alamofire framework version too — older versions have known pinning bypass issues.</span>
+  </div>
+</div>
+
+<!-- ═══ S9: DATA STORAGE ═══ -->
+<div class="div"></div>
+<div class="section" id="s9">
+  <div class="sec-head">
+    <span class="sec-num">09</span>
+    <div>
+      <h2>Data Storage Analysis</h2>
+      <p class="sec-sub">Keychain misuse, NSUserDefaults for secrets, file protection levels, and CoreData encryption.</p>
+    </div>
+  </div>
+
+  <div class="think">
+    <div class="think-label">// ANALYST THINKING</div>
+    <p>iOS has better storage security primitives than Android by default — but developers still misuse them constantly. Three patterns I see repeatedly: tokens stored in NSUserDefaults instead of Keychain (NSUserDefaults is backed up to iCloud by default and readable in plaintext on a jailbroken device), Keychain items with kSecAttrAccessibleAlways (readable even on a locked device), and SQLite databases without encryption (readable in the app's Documents/ directory via iTunes backup or a jailbroken device). Each of these is detectable statically from the binary and verified dynamically.</p>
+  </div>
+
+  <h3>NSUserDefaults — Wrong Place for Sensitive Data</h3>
+  <div class="cmd-block">
+    <div class="cmd-head">find NSUserDefaults usage</div>
+    <div class="cmd-row"><span class="cmd-t">nm "$APP/TargetApp" | grep -iE "NSUserDefaults\|standardUserDefaults\|userDefaults"</span><span class="cmd-n">NSUserDefaults API references</span></div>
+    <div class="cmd-row"><span class="cmd-t">class-dump "$APP/TargetApp" | grep -iE "setObject.*forKey\|setString\|setBool\|setInt" -B3</span><span class="cmd-n">what is being stored in UserDefaults</span></div>
+    <div class="cmd-row"><span class="cmd-t">strings "$APP/TargetApp" | grep -iE '"auth_token"\|"access_token"\|"session"\|"password"\|"pin"' | sort -u</span><span class="cmd-n">UserDefaults key names — do they sound like they store secrets?</span></div>
+  </div>
+
+  <div class="findings">
+    <div class="finding">
+      <div class="f-sev c">CRITICAL</div>
+      <div class="f-body">
+        <div class="f-title">Authentication token stored in NSUserDefaults</div>
+        <div class="f-detail">NSUserDefaults is backed up to iCloud by default. The backing store is a plist file readable in plaintext. On a jailbroken device: <code>cat /var/mobile/Containers/Data/Application/[UUID]/Library/Preferences/com.example.app.plist</code>. Via iTunes backup: the backup contains the plist unencrypted unless the backup is encrypted. Any token here is accessible without root on a backed-up device or with root on a jailbroken device.</div>
+      </div>
+    </div>
+    <div class="finding">
+      <div class="f-sev h">HIGH</div>
+      <div class="f-body">
+        <div class="f-title">Sensitive file written to Documents/ directory without NSFileProtection</div>
+        <div class="f-detail">Files in Documents/ are included in iTunes/Finder backups by default. Without NSFileProtectionComplete, they're also readable when the device is locked by a jailbreak-level attacker. Check what the app writes to Documents/ — look for FileManager.default.urls(for: .documentDirectory) in Swift symbols and trace what data is written there.</div>
+      </div>
+    </div>
+    <div class="finding">
+      <div class="f-sev h">HIGH</div>
+      <div class="f-body">
+        <div class="f-title">CoreData or SQLite database without encryption</div>
+        <div class="f-detail">CoreData's default SQLite backing store is unencrypted. The database file lives in the app's Library/Application Support/ directory and is readable on a jailbroken device. Check whether the app uses SQLCipher for encryption, and if so, find where the passphrase comes from — if it's hardcoded, the encryption is worthless (see Section 6).</div>
+      </div>
+    </div>
+  </div>
+
+  <h3>File Protection — NSFileProtection Levels</h3>
+  <div class="cmd-block">
+    <div class="cmd-head">find file protection configuration</div>
+    <div class="cmd-row"><span class="cmd-t">strings "$APP/TargetApp" | grep -iE 'NSFileProtection\|NSProtectionKey\|completeUnlessOpen\|completeUntilFirst'</span><span class="cmd-n">file protection level strings</span></div>
+    <div class="cmd-row"><span class="cmd-t">nm "$APP/TargetApp" | swift demangle | grep -iE 'FileProtection\|protectionKey\|writeToFile\|createFile'</span><span class="cmd-n">file write methods in Swift</span></div>
+  </div>
+
+  <div class="out-block">
+    <div class="out-label">iOS file protection levels — what each means for a stolen device</div>
+    <pre class="out-pre"><span class="h">NSFileProtectionNone</span>
+→ File always accessible — even if device is off with correct key
+→ Worst possible choice for sensitive data
+
+<span class="h">NSFileProtectionCompleteUntilFirstUserAuthentication</span>
+→ Accessible after first unlock following reboot
+→ Not re-protected on screen lock — accessible on locked screen
+→ Often used for files needed in background tasks — check if justified
+
+<span class="y">NSFileProtectionCompleteUnlessOpen</span>
+→ Accessible while open, and can be written to when device locked
+→ Acceptable for log files that need background writes
+
+<span class="g">NSFileProtectionComplete</span>
+→ File encrypted when device locked — inaccessible without passcode
+→ Correct choice for all sensitive data files
+→ Cannot be accessed in background — app must handle this
+
+<span class="c">If NSFileProtectionComplete is absent for sensitive files,</span>
+<span class="c">a locked device with jailbreak access exposes those files.</span>
+<span class="c">Verify dynamically: copy file off device while screen is locked.</span></pre>
+  </div>
+</div>
+
+<!-- ═══ S10: SWIFT / OBJC PATTERNS ═══ -->
+<div class="div"></div>
+<div class="section" id="s10">
+  <div class="sec-head">
+    <span class="sec-num">10</span>
+    <div>
+      <h2>Swift &amp; Objective-C Vulnerability Patterns</h2>
+      <p class="sec-sub">Language-specific patterns that indicate vulnerabilities — readable from class dumps and disassembly.</p>
+    </div>
+  </div>
+
+  <div class="think">
+    <div class="think-label">// ANALYST THINKING</div>
+    <p>Beyond generic vulnerability patterns, iOS has specific idioms that indicate security issues. Objective-C method swizzling to bypass security checks. JavaScript bridges in WKWebView that expose native APIs to loaded web content. Deep link handlers that don't validate the calling URL's origin. biometricAuthentication implementations that don't verify the authentication result server-side. Each of these is a pattern you learn to recognise in class dumps and demangled symbols, then verify in the disassembler or at runtime with Frida.</p>
+  </div>
+
+  <h3>WebView Security — WKWebView JavaScript Bridge</h3>
+  <div class="cmd-block">
+    <div class="cmd-head">find WebView usage and JS bridge configuration</div>
+    <div class="cmd-row"><span class="cmd-t">class-dump "$APP/TargetApp" | grep -iE "WKWebView\|WKScriptMessage\|userContentController\|addScript\|messageHandler" -A5</span><span class="cmd-n">WebView and JS bridge methods</span></div>
+    <div class="cmd-row"><span class="cmd-t">nm "$APP/TargetApp" | swift demangle | grep -iE "WKScript\|addUserScript\|messageHandler\|userContentController"</span><span class="cmd-n">Swift WebView configuration methods</span></div>
+    <div class="cmd-row"><span class="cmd-t">strings "$APP/TargetApp" | grep -E "javascript:|file://" </span><span class="cmd-n">javascript: URL scheme or file:// access — dangerous in WebView</span></div>
+    <div class="cmd-row"><span class="cmd-t">strings "$APP/TargetApp" | grep -iE 'allowsArbitraryLoads\|allowsLinkPreview\|allowsBackForwardNavigation'</span><span class="cmd-n">WebView configuration flags</span></div>
+  </div>
+
+  <div class="out-block">
+    <div class="out-label">WKWebView script message handler — JavaScript calling native code</div>
+    <pre class="out-pre"><span class="c">// From class-dump — what it reveals:</span>
+<span class="w">&#64;interface NativeBridge : NSObject &lt;WKScriptMessageHandler&gt;</span>
+<span class="y">- (void)userContentController:(WKUserContentController *)controller</span>
+<span class="y">       didReceiveScriptMessage:(WKScriptMessage *)message;</span>
+
+<span class="c">// This tells you a JavaScript bridge exists. In Hopper, find the implementation:</span>
+<span class="c">// The message.name and message.body values come from JavaScript in the WebView.</span>
+<span class="c">// If the handler does:  if (message.name == "transfer") { initiateTransfer(message.body) }</span>
+<span class="c">// Any page loaded in the WebView can call initiateTransfer() with attacker-controlled data.</span>
+
+<span class="c">// Questions to answer:</span>
+<span class="h">// 1. What URLs does the WebView load? (check loadRequest calls)</span>
+<span class="h">// 2. Are those URLs attacker-controllable? (via deep link, push notification?)</span>
+<span class="h">// 3. What does the native handler DO with the JS message?</span>
+<span class="h">// 4. Is there origin validation? (check message.frameInfo.isMainFrame)</span></pre>
+  </div>
+
+  <h3>Jailbreak Detection — Read to Know What to Bypass</h3>
+  <div class="cmd-block">
+    <div class="cmd-head">find jailbreak detection implementation</div>
+    <div class="cmd-row"><span class="cmd-t">class-dump "$APP/TargetApp" | grep -iE "jailbreak\|isJailbroken\|cydia\|substrate\|tweaks" -A10</span><span class="cmd-n">jailbreak detection class/method names</span></div>
+    <div class="cmd-row"><span class="cmd-t">strings "$APP/TargetApp" | grep -iE "/bin/sh\|/etc/apt\|cydia\|substrate\|MobileSubstrate\|unc0ver\|checkra1n\|/usr/libexec/cydia"</span><span class="cmd-n">jailbreak indicator path strings</span></div>
+    <div class="cmd-row"><span class="cmd-t">strings "$APP/TargetApp" | grep -E "^/private/\|^/Applications/\|^/User/Library/\|Cydia\.app"</span><span class="cmd-n">paths checked for jailbreak presence</span></div>
+    <div class="cmd-row"><span class="cmd-t">nm "$APP/TargetApp" | grep -iE "fork\|system\|popen\|dlopen"</span><span class="cmd-n">syscalls used for jailbreak detection</span></div>
+  </div>
+
+  <div class="out-block">
+    <div class="out-label">Common iOS jailbreak detection approaches — and how each is bypassed</div>
+    <pre class="out-pre"><span class="c">// Check 1: File existence</span>
+let paths = ["/Applications/Cydia.app", "/usr/sbin/sshd",
+             "/bin/bash", "/usr/bin/ssh", "/private/var/lib/apt"]
+for path in paths {
+    if FileManager.default.fileExists(atPath: path) { return true }
+}
+<span class="c">Bypass: Hook FileManager.fileExists — return false for all jailbreak paths</span>
+
+<span class="c">// Check 2: Fork/exec syscall</span>
+if fork() != -1 { return true }  // only possible on jailbroken devices
+<span class="c">Bypass: Hook fork() at the C level — return -1 always</span>
+
+<span class="c">// Check 3: Dynamic library injection detection</span>
+if let env = ProcessInfo.processInfo.environment["DYLD_INSERT_LIBRARIES"] { return true }
+<span class="c">Bypass: Frida runs in-process — this won't catch Frida directly</span>
+
+<span class="c">// Check 4: Sandbox escape test</span>
+let testPath = "/private/jailbreak_test_\(UUID().uuidString)"
+do { try "test".write(toFile: testPath, atomically: true, encoding: .utf8)
+     return true  // could write outside sandbox — jailbroken
+} catch {}
+<span class="c">Bypass: Hook FileManager.write — make it always throw</span>
+
+<span class="c">To bypass all at once: objection --gadget com.example.app explore</span>
+<span class="c">                       ios jailbreak simulate</span></pre>
+  </div>
+
+  <h3>Biometric Authentication — Where It Goes Wrong</h3>
+  <div class="cmd-block">
+    <div class="cmd-head">find biometric/LocalAuthentication usage</div>
+    <div class="cmd-row"><span class="cmd-t">nm "$APP/TargetApp" | grep -iE "LAContext\|LocalAuthentication\|evaluatePolicy\|biometry\|TouchID\|FaceID"</span><span class="cmd-n">LocalAuthentication framework references</span></div>
+    <div class="cmd-row"><span class="cmd-t">class-dump "$APP/TargetApp" | grep -iE "biometric\|faceID\|touchID\|LAPolicy\|evaluatePolicy" -A8</span><span class="cmd-n">biometric auth methods</span></div>
+  </div>
+
+  <div class="out-block">
+    <div class="out-label">Biometric auth — correct vs bypassable patterns</div>
+    <pre class="out-pre"><span class="c">// WRONG — biometric success alone unlocks the app:</span>
+let context = LAContext()
+context.evaluatePolicy(.deviceOwnerAuthenticationWithBiometrics,
+                       localizedReason: "Authenticate") { success, error in
+    if success {
+        <span class="h">self.showDashboard()</span>   // client-side auth — hook evaluatePolicy to return true
+    }
+}
+<span class="c">Bypass: objection → ios ui biometrics_bypass</span>
+<span class="c">        OR: hook LAContext.evaluatePolicy — call completion handler with success=true</span>
+
+<span class="g">// CORRECT — biometric success unlocks a Keychain item, not the app itself:</span>
+<span class="g">let query: [String: Any] = [</span>
+<span class="g">    kSecClass as String: kSecClassGenericPassword,</span>
+<span class="g">    kSecAttrService as String: "com.example.app",</span>
+<span class="g">    kSecAttrAccount as String: "authToken",</span>
+<span class="g">    kSecMatchLimit as String: kSecMatchLimitOne,</span>
+<span class="g">    kSecUseOperationPrompt as String: "Authenticate to access your account"</span>
+<span class="g">]</span>
+<span class="c">// In correct implementation, the Keychain item requires biometric auth at the</span>
+<span class="c">// OS level via kSecAccessControlBiometryCurrentSet — hooking evaluatePolicy</span>
+<span class="c">// at the application level does NOT bypass this because auth happens in Secure Enclave.</span></pre>
+  </div>
+</div>
+
+<!-- ═══ S11: THIRD-PARTY ═══ -->
+<div class="div"></div>
+<div class="section" id="s11">
+  <div class="sec-head">
+    <span class="sec-num">11</span>
+    <div>
+      <h2>Third-Party SDKs &amp; Supply Chain</h2>
+      <p class="sec-sub">The app you test is the sum of its code and every framework it embeds. Version numbers in Info.plists tell you what to look up.</p>
+    </div>
+  </div>
+
+  <div class="think">
+    <div class="think-label">// ANALYST THINKING</div>
+    <p>iOS frameworks embed their own Info.plist files with version strings. Combined with the framework names from otool -L, this gives me a complete dependency manifest. I cross-reference every significant third-party framework against osv.dev, NVD, and the GitHub advisories for that project. AFNetworking and older Alamofire versions have known TLS bypass CVEs. Old Realm versions have known data exposure bugs. Old Firebase SDK versions have known auth bypass issues. Version-specific CVEs are the fastest finding — version number extraction takes two minutes, exploitation of a known CVE takes five.</p>
+  </div>
+
+  <h3>Extract SDK Versions from Embedded Frameworks</h3>
+  <div class="cmd-block">
+    <div class="cmd-head">framework version enumeration</div>
+    <div class="cmd-row"><span class="cmd-t">for fw in "$APP/Frameworks/"*.framework; do name=$(basename $fw .framework); ver=$(plutil -p "$fw/Info.plist" 2>/dev/null | grep -E '"CFBundleShortVersionString"\|"CFBundleVersion"'); echo "$name: $ver"; done</span><span class="cmd-n">all framework versions in one pass</span></div>
+    <div class="cmd-row"><span class="cmd-t">find "$APP/Frameworks" -name "Info.plist" -exec sh -c 'echo "=== {} ==="; plutil -p "{}" | grep -E "Version|version|Name|Identifier"' \;</span><span class="cmd-n">detailed framework metadata</span></div>
+    <div class="cmd-row"><span class="cmd-t"># Cross-reference: https://osv.dev, https://github.com/advisories, NVD</span><span class="cmd-n">check each SDK version for known CVEs</span></div>
+  </div>
+
+  <div class="out-block">
+    <div class="out-label">Framework version extraction — then CVE cross-reference</div>
+    <pre class="out-pre">$ for fw in Payload/TargetApp.app/Frameworks/*.framework; do
+    name=$(basename $fw .framework)
+    ver=$(plutil -p "$fw/Info.plist" 2&gt;/dev/null | grep "ShortVersion" | awk -F'"' '{print $4}')
+    echo "$name  $ver"
+  done
+
+<span class="y">Alamofire       5.2.1</span>    → <span class="h">CVE-2020-26213: ServerTrustEvaluation bypass — CRITICAL</span>
+<span class="g">Alamofire       5.9.1</span>    → no known critical CVEs — acceptable
+<span class="y">AFNetworking    3.1.0</span>    → <span class="h">CVE-2016-7145: hostname verification bypass</span>
+<span class="h">AFNetworking    2.5.4</span>    → <span class="h">multiple TLS CVEs — do not use</span>
+<span class="y">Realm           10.7.0</span>   → check osv.dev — multiple versions had issues
+<span class="y">Firebase        8.0.0</span>    → check specific module versions
+<span class="h">OpenSSL         1.0.1e</span>   → <span class="h">Heartbleed (CVE-2014-0160) — extremely old</span>
+<span class="g">CryptoSwift     1.8.0</span>    → no known critical issues at this version</pre>
+  </div>
+
+  <h3>CocoaPods and Swift Package Manager — Lock File Analysis</h3>
+  <p class="body">Sometimes the app bundle includes build artifacts from CocoaPods or SwiftPM that reveal exact dependency versions — often more reliably than framework Info.plists.</p>
+  <div class="cmd-block">
+    <div class="cmd-head">dependency lock files</div>
+    <div class="cmd-row"><span class="cmd-t">find "$APP" -name "Podfile.lock" -o -name "Package.resolved" 2>/dev/null</span><span class="cmd-n">sometimes accidentally bundled — pinned exact versions</span></div>
+    <div class="cmd-row"><span class="cmd-t">cat "$APP/Podfile.lock" 2>/dev/null | grep -E "^\s+- " | sort</span><span class="cmd-n">exact pod versions if Podfile.lock is present</span></div>
+    <div class="cmd-row"><span class="cmd-t">cat "$APP/Package.resolved" 2>/dev/null | python3 -m json.tool | grep -E '"version"\|"identity"'</span><span class="cmd-n">SwiftPM exact versions if Package.resolved bundled</span></div>
+  </div>
+
+  <div class="callout wa">
+    <span class="callout-icon">⚠</span>
+    <span>Finding a <strong>Podfile.lock</strong> or <strong>Package.resolved</strong> accidentally bundled in the IPA is a medium finding in itself — it reveals the complete dependency tree, exact versions, and sometimes internal package repository URLs. These files belong in source control, not in production builds.</span>
+  </div>
+</div>
+
+<!-- ═══ S12: CHECKLIST ═══ -->
+<div class="div"></div>
+<div class="section" id="s12">
+  <div class="sec-head">
+    <span class="sec-num">12</span>
+    <div>
+      <h2>Professional Checklist</h2>
+      <p class="sec-sub">Click to mark complete. Every item must be verified before the engagement closes.</p>
+    </div>
+  </div>
+
+  <div class="checklist">
+    <div class="check-item" onclick="toggle(this)"><div class="check-ph">EXTRACT</div><div class="check-wrap"><div class="check-box"></div><span class="check-text">Confirmed binary encryption status — cryptid=0 verified before proceeding</span></div></div>
+    <div class="check-item" onclick="toggle(this)"><div class="check-ph">EXTRACT</div><div class="check-wrap"><div class="check-box"></div><span class="check-text">Surveyed full IPA file tree — read every filename carefully</span></div></div>
+    <div class="check-item" onclick="toggle(this)"><div class="check-ph">EXTRACT</div><div class="check-wrap"><div class="check-box"></div><span class="check-text">Checked for bundled .p12, .cer, .pem, .der files — extracted and tested any found</span></div></div>
+    <div class="check-item" onclick="toggle(this)"><div class="check-ph">EXTRACT</div><div class="check-wrap"><div class="check-box"></div><span class="check-text">Opened any bundled .db or .sqlite files — enumerated all tables</span></div></div>
+    <div class="check-item" onclick="toggle(this)"><div class="check-ph">EXTRACT</div><div class="check-wrap"><div class="check-box"></div><span class="check-text">Surveyed Frameworks/ and PlugIns/ directories — listed all embedded binaries</span></div></div>
+    <div class="check-item" onclick="toggle(this)"><div class="check-ph">PLIST</div><div class="check-wrap"><div class="check-box"></div><span class="check-text">Read Info.plist — checked ATS config, URL schemes, permissions, associated domains</span></div></div>
+    <div class="check-item" onclick="toggle(this)"><div class="check-ph">PLIST</div><div class="check-wrap"><div class="check-box"></div><span class="check-text">Checked NSAllowsArbitraryLoads — documented if true (Burp works without Frida)</span></div></div>
+    <div class="check-item" onclick="toggle(this)"><div class="check-ph">PLIST</div><div class="check-wrap"><div class="check-box"></div><span class="check-text">Read all NSExceptionDomains — checked TLS version minimums and HTTP exceptions</span></div></div>
+    <div class="check-item" onclick="toggle(this)"><div class="check-ph">PLIST</div><div class="check-wrap"><div class="check-box"></div><span class="check-text">Extracted entitlements — checked get-task-allow, keychain-access-groups, associated-domains</span></div></div>
+    <div class="check-item" onclick="toggle(this)"><div class="check-ph">PLIST</div><div class="check-wrap"><div class="check-box"></div><span class="check-text">Read GoogleService-Info.plist if present — tested Firebase DB and Storage for public access</span></div></div>
+    <div class="check-item" onclick="toggle(this)"><div class="check-ph">PLIST</div><div class="check-wrap"><div class="check-box"></div><span class="check-text">Enumerated and read all other bundled .plist files — searched for credentials</span></div></div>
+    <div class="check-item" onclick="toggle(this)"><div class="check-ph">BINARY</div><div class="check-wrap"><div class="check-box"></div><span class="check-text">Checked binary protections — PIE, stack canaries, ARC confirmed</span></div></div>
+    <div class="check-item" onclick="toggle(this)"><div class="check-ph">BINARY</div><div class="check-wrap"><div class="check-box"></div><span class="check-text">Ran otool -L — listed all linked frameworks, identified third-party dependencies</span></div></div>
+    <div class="check-item" onclick="toggle(this)"><div class="check-ph">BINARY</div><div class="check-wrap"><div class="check-box"></div><span class="check-text">Ran strings on main binary and all frameworks — searched for secrets, URLs, keys</span></div></div>
+    <div class="check-item" onclick="toggle(this)"><div class="check-ph">BINARY</div><div class="check-wrap"><div class="check-box"></div><span class="check-text">Ran strings for AWS key pattern (AKIA...), Stripe keys, Google API key (AIza...)</span></div></div>
+    <div class="check-item" onclick="toggle(this)"><div class="check-ph">CLASS</div><div class="check-wrap"><div class="check-box"></div><span class="check-text">Ran class-dump — read all class names, mapped security-relevant classes</span></div></div>
+    <div class="check-item" onclick="toggle(this)"><div class="check-ph">CLASS</div><div class="check-wrap"><div class="check-box"></div><span class="check-text">Grepped class-dump for auth, token, password, pin, biometric, crypt, network</span></div></div>
+    <div class="check-item" onclick="toggle(this)"><div class="check-ph">CLASS</div><div class="check-wrap"><div class="check-box"></div><span class="check-text">Demangled Swift symbols — found security-relevant method signatures</span></div></div>
+    <div class="check-item" onclick="toggle(this)"><div class="check-ph">CLASS</div><div class="check-wrap"><div class="check-box"></div><span class="check-text">Identified any validatePin/checkAuth returning Bool — flagged for Frida bypass test</span></div></div>
+    <div class="check-item" onclick="toggle(this)"><div class="check-ph">CRYPTO</div><div class="check-wrap"><div class="check-box"></div><span class="check-text">Found CCCrypt calls — verified algorithm not ECB, IV is random, key not hardcoded</span></div></div>
+    <div class="check-item" onclick="toggle(this)"><div class="check-ph">CRYPTO</div><div class="check-wrap"><div class="check-box"></div><span class="check-text">Checked Keychain accessibility levels — no kSecAttrAccessibleAlways for sensitive items</span></div></div>
+    <div class="check-item" onclick="toggle(this)"><div class="check-ph">NETWORK</div><div class="check-wrap"><div class="check-box"></div><span class="check-text">Found SSL pinning implementation — traced it end-to-end, confirmed no empty catch bypass</span></div></div>
+    <div class="check-item" onclick="toggle(this)"><div class="check-ph">NETWORK</div><div class="check-wrap"><div class="check-box"></div><span class="check-text">Extracted all hardcoded URLs — tested any /admin, /debug, /internal endpoints directly</span></div></div>
+    <div class="check-item" onclick="toggle(this)"><div class="check-ph">STORAGE</div><div class="check-wrap"><div class="check-box"></div><span class="check-text">Found NSUserDefaults usage — verified no sensitive data stored there</span></div></div>
+    <div class="check-item" onclick="toggle(this)"><div class="check-ph">STORAGE</div><div class="check-wrap"><div class="check-box"></div><span class="check-text">Checked file protection levels — sensitive files use NSFileProtectionComplete</span></div></div>
+    <div class="check-item" onclick="toggle(this)"><div class="check-ph">STORAGE</div><div class="check-wrap"><div class="check-box"></div><span class="check-text">Checked for CoreData/SQLite encryption — verified passphrase is not hardcoded</span></div></div>
+    <div class="check-item" onclick="toggle(this)"><div class="check-ph">PATTERNS</div><div class="check-wrap"><div class="check-box"></div><span class="check-text">Checked WKWebView configuration — JS bridge handlers and loaded URL origins reviewed</span></div></div>
+    <div class="check-item" onclick="toggle(this)"><div class="check-ph">PATTERNS</div><div class="check-wrap"><div class="check-box"></div><span class="check-text">Found biometric auth — verified Keychain-bound implementation, not client-side Bool</span></div></div>
+    <div class="check-item" onclick="toggle(this)"><div class="check-ph">PATTERNS</div><div class="check-wrap"><div class="check-box"></div><span class="check-text">Found jailbreak detection — read all checks, documented bypass methods for dynamic testing</span></div></div>
+    <div class="check-item" onclick="toggle(this)"><div class="check-ph">SDKS</div><div class="check-wrap"><div class="check-box"></div><span class="check-text">Extracted all framework versions from embedded Info.plist files</span></div></div>
+    <div class="check-item" onclick="toggle(this)"><div class="check-ph">SDKS</div><div class="check-wrap"><div class="check-box"></div><span class="check-text">Cross-referenced all SDK versions against osv.dev and NVD</span></div></div>
+    <div class="check-item" onclick="toggle(this)"><div class="check-ph">SDKS</div><div class="check-wrap"><div class="check-box"></div><span class="check-text">Checked for accidentally bundled Podfile.lock or Package.resolved</span></div></div>
+  </div>
+
+  <div id="prog-summary" style="margin-top:14px;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--dimmed);">
+    0 / 32 items completed
+  </div>
+</div>
+
+<div class="div"></div>
+</div><!-- /content -->
+
+<footer style="padding:24px 64px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;position:relative;z-index:1;">
+  <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--dimmed);letter-spacing:1px;">iOS STATIC ANALYSIS — ADVANCED FIELD GUIDE</span>
+  <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--dimmed);">For authorized security testing only</span>
+</footer>
+</main>
+
+<script>
+window.addEventListener('scroll', () => {
+  const el = document.documentElement;
+  const pct = (el.scrollTop / (el.scrollHeight - el.clientHeight)) * 100;
+  document.getElementById('prog').style.width = pct + '%';
+});
+
+const sections = document.querySelectorAll('.section');
+const navLinks = document.querySelectorAll('.nav-link');
+const obs = new IntersectionObserver(entries => {
+  entries.forEach(e => {
+    if (e.isIntersecting) {
+      navLinks.forEach(l => l.classList.remove('active'));
+      const lnk = document.querySelector(`.nav-link[href="#${e.target.id}"]`);
+      if (lnk) lnk.classList.add('active');
+    }
+  });
+}, { threshold: 0.2 });
+sections.forEach(s => obs.observe(s));
+
+function toggle(el) {
+  el.classList.toggle('done');
+  el.querySelector('.check-box').textContent = el.classList.contains('done') ? '✓' : '';
+  const total = document.querySelectorAll('.check-item').length;
+  const done  = document.querySelectorAll('.check-item.done').length;
+  document.getElementById('prog-summary').textContent = `${done} / ${total} items completed`;
+}
+</script>
+</body>
+</html>

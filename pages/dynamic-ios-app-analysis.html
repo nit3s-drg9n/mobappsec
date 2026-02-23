@@ -1,0 +1,1658 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>iOS Dynamic Analysis — Advanced Techniques Field Guide</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Playfair+Display:ital,wght@0,700;0,900;1,700&family=Source+Sans+3:ital,wght@0,300;0,400;0,500;1,300&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:       #0A0A0F;
+  --surface:  #0F0F18;
+  --panel:    #141420;
+  --raised:   #1A1A28;
+  --border:   #252535;
+  --border2:  #303048;
+  --accent:   #E8F4FD;
+  --blue:     #4A9EFF;
+  --teal:     #00D4AA;
+  --orange:   #FF7043;
+  --red:      #FF4757;
+  --purple:   #A78BFA;
+  --yellow:   #FFD60A;
+  --white:    #F0EEF8;
+  --muted:    #8A8AA8;
+  --dimmed:   #404060;
+  --code-bg:  #050508;
+  --code-cmd: #FFD60A;
+  --code-out: #00D4AA;
+  --code-cmt: #404060;
+  --code-h:   #FF4757;
+  --code-p:   #A78BFA;
+}
+
+*,*::before,*::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+
+body {
+  background: var(--bg);
+  color: var(--white);
+  font-family: 'Source Sans 3', sans-serif;
+  font-size: 15px;
+  line-height: 1.7;
+  overflow-x: hidden;
+}
+
+/* starfield bg */
+body::before {
+  content: '';
+  position: fixed; inset: 0;
+  background-image:
+    radial-gradient(1px 1px at 20% 30%, rgba(74,158,255,0.3) 0%, transparent 100%),
+    radial-gradient(1px 1px at 80% 10%, rgba(167,139,250,0.3) 0%, transparent 100%),
+    radial-gradient(1px 1px at 60% 70%, rgba(0,212,170,0.2) 0%, transparent 100%),
+    radial-gradient(1px 1px at 10% 80%, rgba(74,158,255,0.2) 0%, transparent 100%),
+    radial-gradient(600px at 70% 20%, rgba(74,158,255,0.04) 0%, transparent 70%),
+    radial-gradient(400px at 20% 80%, rgba(167,139,250,0.04) 0%, transparent 70%);
+  pointer-events: none; z-index: 0;
+}
+
+/* ── SIDEBAR ── */
+.sidebar {
+  position: fixed; left: 0; top: 0; bottom: 0; width: 226px;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  overflow-y: auto; z-index: 100;
+  display: flex; flex-direction: column;
+}
+
+.sidebar-brand {
+  padding: 22px 18px 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+.sidebar-brand .os {
+  font-family: 'Space Mono', monospace;
+  font-size: 9px; color: var(--teal);
+  letter-spacing: 3px; text-transform: uppercase; margin-bottom: 8px;
+}
+
+.sidebar-brand .title {
+  font-family: 'Playfair Display', serif;
+  font-size: 20px; font-weight: 700;
+  color: var(--white); line-height: 1.2;
+  font-style: italic;
+}
+
+.sidebar-brand .title em {
+  color: var(--blue); font-style: normal;
+}
+
+.nav-label {
+  font-family: 'Space Mono', monospace;
+  font-size: 8px; color: var(--dimmed);
+  letter-spacing: 2px; text-transform: uppercase;
+  padding: 16px 18px 5px;
+}
+
+.nav-link {
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 18px;
+  color: var(--muted); text-decoration: none;
+  font-size: 12.5px;
+  font-family: 'Source Sans 3', sans-serif;
+  border-left: 2px solid transparent;
+  transition: all 0.15s;
+}
+.nav-link:hover, .nav-link.active {
+  color: var(--white);
+  background: rgba(74,158,255,0.06);
+  border-left-color: var(--blue);
+}
+.nav-link .num {
+  font-family: 'Space Mono', monospace;
+  font-size: 9px; color: var(--dimmed);
+  width: 20px; flex-shrink: 0;
+}
+
+/* ── PROGRESS ── */
+.progress-bar {
+  position: fixed; top: 0; left: 226px; right: 0;
+  height: 2px; background: var(--border); z-index: 200;
+}
+.progress-fill {
+  height: 100%; width: 0%;
+  background: linear-gradient(90deg, var(--blue), var(--teal));
+  transition: width 0.08s;
+}
+
+/* ── MAIN ── */
+.main { margin-left: 226px; position: relative; z-index: 1; }
+
+/* ── HERO ── */
+.hero {
+  padding: 72px 64px 56px;
+  position: relative; overflow: hidden;
+  border-bottom: 1px solid var(--border);
+}
+
+.hero-grid {
+  position: absolute; inset: 0;
+  background-image:
+    linear-gradient(rgba(74,158,255,0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(74,158,255,0.04) 1px, transparent 1px);
+  background-size: 40px 40px;
+  pointer-events: none;
+}
+
+.hero-glow {
+  position: absolute; width: 800px; height: 400px;
+  background: radial-gradient(ellipse, rgba(74,158,255,0.08) 0%, transparent 70%);
+  top: -100px; left: -200px; pointer-events: none;
+}
+
+.hero-eyebrow {
+  font-family: 'Space Mono', monospace;
+  font-size: 10px; color: var(--teal);
+  letter-spacing: 3px; text-transform: uppercase;
+  margin-bottom: 20px;
+  display: flex; align-items: center; gap: 12px;
+}
+.hero-eyebrow::before { content: ''; width: 28px; height: 1px; background: var(--teal); }
+
+h1 {
+  font-family: 'Playfair Display', serif;
+  font-size: clamp(44px, 6vw, 80px);
+  font-weight: 900; color: var(--white);
+  line-height: 1.05; letter-spacing: -1px;
+  margin-bottom: 16px;
+}
+h1 em { color: var(--blue); font-style: italic; }
+
+.hero-desc {
+  font-size: 15px; color: var(--muted);
+  max-width: 560px; line-height: 1.8; margin-bottom: 28px;
+}
+
+.tool-row { display: flex; flex-wrap: wrap; gap: 7px; }
+.tool-chip {
+  font-family: 'Space Mono', monospace;
+  font-size: 10px; padding: 4px 10px;
+  border: 1px solid var(--border2);
+  color: var(--muted); border-radius: 2px;
+  background: rgba(255,255,255,0.02);
+}
+
+/* ── CONTENT ── */
+.content { max-width: 880px; padding: 0 64px 80px; }
+
+/* ── SECTION ── */
+.section { padding-top: 60px; }
+
+.sec-head {
+  display: flex; align-items: flex-start; gap: 16px;
+  margin-bottom: 28px; padding-bottom: 20px;
+  border-bottom: 1px solid var(--border);
+}
+.sec-num {
+  font-family: 'Space Mono', monospace;
+  font-size: 10px; color: var(--blue);
+  background: rgba(74,158,255,0.08);
+  border: 1px solid rgba(74,158,255,0.2);
+  padding: 3px 8px; border-radius: 2px;
+  flex-shrink: 0; margin-top: 6px;
+}
+h2 {
+  font-family: 'Playfair Display', serif;
+  font-size: 28px; font-weight: 700;
+  color: var(--white); line-height: 1.15;
+  margin-bottom: 4px;
+}
+.sec-sub { font-size: 13.5px; color: var(--muted); font-style: italic; }
+
+/* ── H3 ── */
+h3 {
+  font-family: 'Space Mono', monospace;
+  font-size: 10px; color: var(--teal);
+  margin: 32px 0 12px; letter-spacing: 2px;
+  text-transform: uppercase;
+  display: flex; align-items: center; gap: 10px;
+}
+h3::before { content: '//'; color: var(--dimmed); }
+h3::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+/* ── THINK BLOCK ── */
+.think {
+  background: linear-gradient(135deg, rgba(74,158,255,0.05), rgba(167,139,250,0.03));
+  border: 1px solid rgba(74,158,255,0.12);
+  border-left: 3px solid var(--blue);
+  border-radius: 3px; padding: 18px 22px;
+  margin: 16px 0 24px;
+}
+.think-label {
+  font-family: 'Space Mono', monospace;
+  font-size: 9px; color: var(--blue);
+  letter-spacing: 2px; margin-bottom: 10px;
+}
+.think p { color: var(--muted); font-style: italic; font-size: 14px; line-height: 1.9; }
+.think p + p { margin-top: 10px; }
+
+/* ── BODY TEXT ── */
+.body { color: var(--muted); font-size: 14.5px; line-height: 1.8; margin: 8px 0 16px; }
+.body strong { color: var(--white); font-weight: 500; }
+.body code {
+  font-family: 'Space Mono', monospace;
+  font-size: 12px; color: var(--teal);
+  background: rgba(0,212,170,0.07);
+  padding: 1px 5px; border-radius: 2px;
+}
+
+/* ── CMD BLOCK ── */
+.cmd-block {
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 4px; overflow: hidden;
+  margin: 10px 0 18px;
+  font-family: 'Space Mono', monospace;
+  font-size: 12px;
+}
+.cmd-head {
+  background: var(--panel);
+  padding: 7px 14px;
+  font-size: 9px; color: var(--dimmed);
+  letter-spacing: 2px; text-transform: uppercase;
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 8px;
+}
+.cmd-head::before {
+  content: ''; width: 7px; height: 7px; border-radius: 50%;
+  background: #FF5F56; flex-shrink: 0;
+  box-shadow: 12px 0 0 #FFBD2E, 24px 0 0 #27C93F;
+}
+.cmd-row {
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 9px 14px;
+  border-bottom: 1px solid rgba(37,53,53,0.6);
+  transition: background 0.1s;
+}
+.cmd-row:last-child { border-bottom: none; }
+.cmd-row:hover { background: rgba(74,158,255,0.03); }
+.cmd-t {
+  color: var(--code-cmd);
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  line-height: 1.65;
+}
+.cmd-n {
+  color: var(--code-cmt); font-size: 11px;
+  padding-left: 10px;
+  border-left: 2px solid rgba(74,158,255,0.15);
+  line-height: 1.5; word-break: break-word;
+}
+
+/* ── OUTPUT ── */
+.out-block { margin: 10px 0 24px; }
+.out-label {
+  font-family: 'Space Mono', monospace;
+  font-size: 10px; color: var(--teal);
+  margin-bottom: 5px;
+  display: flex; align-items: center; gap: 7px;
+}
+.out-label::before { content: '▶'; font-size: 8px; }
+.out-pre {
+  background: var(--code-bg);
+  border: 1px solid rgba(0,212,170,0.15);
+  border-left: 3px solid var(--teal);
+  border-radius: 3px; padding: 14px 18px;
+  font-family: 'Space Mono', monospace;
+  font-size: 11.5px; color: #00C49A;
+  white-space: pre; overflow-x: auto; line-height: 1.9;
+}
+.out-pre .h { color: var(--code-h); font-weight: 700; }
+.out-pre .g { color: var(--code-out); }
+.out-pre .c { color: var(--code-cmt); }
+.out-pre .y { color: var(--code-cmd); }
+.out-pre .p { color: var(--code-p); }
+.out-pre .b { color: var(--blue); }
+.out-pre .w { color: var(--white); }
+
+/* ── FINDINGS ── */
+.findings { display: flex; flex-direction: column; gap: 2px; margin: 14px 0 22px; }
+.finding {
+  display: grid; grid-template-columns: 88px 1fr;
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 3px; overflow: hidden; transition: border-color 0.15s;
+}
+.finding:hover { border-color: var(--border2); }
+.f-sev {
+  padding: 14px 10px;
+  font-family: 'Space Mono', monospace;
+  font-size: 9px; font-weight: 700; letter-spacing: 1px;
+  display: flex; align-items: flex-start;
+  justify-content: center; padding-top: 17px;
+}
+.f-sev.c { color: var(--red);    background: rgba(255,71,87,0.06); }
+.f-sev.h { color: var(--orange); background: rgba(255,112,67,0.06); }
+.f-sev.m { color: var(--yellow); background: rgba(255,214,10,0.06); }
+.f-sev.i { color: var(--blue);   background: rgba(74,158,255,0.06); }
+.f-body { padding: 13px 15px; border-left: 1px solid var(--border); }
+.f-title { font-weight: 500; color: var(--white); font-size: 14px; margin-bottom: 5px; }
+.f-detail { font-size: 13.5px; color: var(--muted); line-height: 1.65; }
+
+/* ── CALLOUT ── */
+.callout {
+  border-radius: 3px; padding: 12px 16px; margin: 14px 0;
+  font-size: 13.5px; display: flex; gap: 10px;
+  align-items: flex-start; line-height: 1.65;
+}
+.callout-icon { flex-shrink: 0; font-size: 15px; margin-top: 1px; }
+.callout.cr { background: rgba(255,71,87,0.06);   border: 1px solid rgba(255,71,87,0.2);   color: #FF8A96; }
+.callout.wa { background: rgba(255,112,67,0.06);  border: 1px solid rgba(255,112,67,0.2);  color: #FFB08A; }
+.callout.ti { background: rgba(0,212,170,0.05);   border: 1px solid rgba(0,212,170,0.18);  color: #60E8CC; }
+.callout.in { background: rgba(74,158,255,0.05);  border: 1px solid rgba(74,158,255,0.18); color: #80BEFF; }
+
+/* ── TECHNIQUE CARD ── */
+.tech-card {
+  background: var(--panel); border: 1px solid var(--border);
+  border-left: 3px solid var(--purple);
+  border-radius: 3px; padding: 16px 20px; margin: 10px 0 18px;
+}
+.tech-card-title {
+  font-family: 'Space Mono', monospace;
+  font-size: 10px; color: var(--purple);
+  letter-spacing: 1px; margin-bottom: 10px;
+  display: flex; align-items: center; gap: 8px;
+}
+.tech-card-title::before { content: '◆'; font-size: 8px; }
+
+/* ── DIVIDER ── */
+.div { height: 1px; background: var(--border); margin: 48px 0 0; }
+
+/* ── CHECKLIST ── */
+.checklist { margin: 14px 0; }
+.check-item {
+  display: grid; grid-template-columns: 80px 1fr;
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 3px; overflow: hidden; margin-bottom: 2px;
+  cursor: pointer; transition: background 0.1s;
+}
+.check-item:hover { background: rgba(255,255,255,0.02); }
+.check-item.done { opacity: 0.4; }
+.check-item.done .check-text { text-decoration: line-through; color: var(--dimmed); }
+.check-ph {
+  padding: 9px 10px;
+  font-family: 'Space Mono', monospace;
+  font-size: 8px; color: var(--dimmed); font-weight: 700;
+  letter-spacing: 1px; display: flex; align-items: center;
+  background: rgba(255,255,255,0.01); border-right: 1px solid var(--border);
+}
+.check-wrap { padding: 9px 13px; display: flex; align-items: center; gap: 9px; }
+.check-box {
+  width: 13px; height: 13px; border: 1px solid var(--dimmed);
+  border-radius: 2px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 9px; color: var(--teal); transition: all 0.15s;
+}
+.check-item.done .check-box { background: rgba(0,212,170,0.1); border-color: var(--teal); }
+.check-text { font-size: 13.5px; color: var(--white); transition: all 0.15s; }
+
+/* ── SCROLLBAR ── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--border2); }
+
+@media (max-width: 900px) {
+  .sidebar { display: none; }
+  .main { margin-left: 0; }
+  .content, .hero { padding-left: 20px; padding-right: 20px; }
+  h1 { font-size: 38px; }
+  .progress-bar { left: 0; }
+}
+
+@keyframes fadeUp { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
+.section { animation: fadeUp 0.35s ease both; }
+</style>
+</head>
+<body>
+
+<div class="progress-bar"><div class="progress-fill" id="prog"></div></div>
+
+<!-- SIDEBAR -->
+<nav class="sidebar">
+  <div class="sidebar-brand">
+    <div class="os">iOS Security</div>
+    <div class="title">Dynamic<br><em>Analysis</em><br>Field Guide</div>
+  </div>
+  <div class="nav-label">Sections</div>
+  <a href="#s1"  class="nav-link"><span class="num">01</span>Mindset &amp; Setup</a>
+  <a href="#s2"  class="nav-link"><span class="num">02</span>Environment Prep</a>
+  <a href="#s3"  class="nav-link"><span class="num">03</span>Frida on iOS</a>
+  <a href="#s4"  class="nav-link"><span class="num">04</span>Objection Shell</a>
+  <a href="#s5"  class="nav-link"><span class="num">05</span>SSL Pinning Bypass</a>
+  <a href="#s6"  class="nav-link"><span class="num">06</span>Keychain Analysis</a>
+  <a href="#s7"  class="nav-link"><span class="num">07</span>File System</a>
+  <a href="#s8"  class="nav-link"><span class="num">08</span>Network Traffic</a>
+  <a href="#s9"  class="nav-link"><span class="num">09</span>Runtime Manipulation</a>
+  <a href="#s10" class="nav-link"><span class="num">10</span>Memory Analysis</a>
+  <a href="#s11" class="nav-link"><span class="num">11</span>Bypass Techniques</a>
+  <a href="#s12" class="nav-link"><span class="num">12</span>Checklist</a>
+</nav>
+
+<main class="main">
+
+<!-- HERO -->
+<header class="hero">
+  <div class="hero-grid"></div>
+  <div class="hero-glow"></div>
+  <div class="hero-eyebrow">Advanced Techniques — Real Methods That Work</div>
+  <h1>iOS Dynamic<br><em>Analysis</em></h1>
+  <p class="hero-desc">Testing a live iOS app on a jailbroken device. What to hook, what to dump, how to intercept, and what real findings look like at runtime — with the analyst thinking behind every technique.</p>
+  <div class="tool-row">
+    <span class="tool-chip">Frida</span>
+    <span class="tool-chip">objection</span>
+    <span class="tool-chip">lldb</span>
+    <span class="tool-chip">Burp Suite</span>
+    <span class="tool-chip">SSL Kill Switch 2</span>
+    <span class="tool-chip">Cycript</span>
+    <span class="tool-chip">iSpy</span>
+    <span class="tool-chip">Passionfruit</span>
+    <span class="tool-chip">idb</span>
+    <span class="tool-chip">scp / SSH</span>
+    <span class="tool-chip">Needle</span>
+    <span class="tool-chip">MobSF</span>
+  </div>
+</header>
+
+<div class="content">
+
+<!-- ═══ S1: MINDSET ═══ -->
+<div class="section" id="s1">
+  <div class="sec-head">
+    <span class="sec-num">01</span>
+    <div>
+      <h2>Mindset &amp; What Makes iOS Different</h2>
+      <p class="sec-sub">iOS dynamic analysis is not Android dynamic analysis with different commands. The security model, the runtime, and the bypass techniques are fundamentally different.</p>
+    </div>
+  </div>
+
+  <div class="think">
+    <div class="think-label">// ANALYST THINKING</div>
+    <p>On Android, I have ADB — a built-in debugging bridge that gives me shell access, file system access, and component invocation without root. iOS has no equivalent. On a non-jailbroken device I can intercept network traffic and not much else. Everything interesting in iOS dynamic analysis — Keychain dumping, file system access, Frida injection, method hooking — requires a jailbroken device. That's the fundamental constraint that shapes the entire methodology.</p>
+    <p>On a jailbroken device running Frida, the power is remarkable. Objective-C's dynamic dispatch model means every method call goes through objc_msgSend — hookable. Every class, method, and property is inspectable at runtime. The Keychain is readable. The file system is open. The question is not whether you can find the vulnerability — it's knowing where to look and what you're looking at when you find it.</p>
+  </div>
+
+  <h3>The Four iOS Dynamic Analysis Questions</h3>
+  <div class="findings">
+    <div class="finding">
+      <div class="f-sev i">Q1</div>
+      <div class="f-body">
+        <div class="f-title">What data does the app store on the device — and is it protected?</div>
+        <div class="f-detail">Keychain items with wrong accessibility levels. NSUserDefaults with tokens. Unencrypted SQLite databases. Files in Documents/ without NSFileProtectionComplete. The device is the attacker's physical medium — treat every byte on disk as potentially readable.</div>
+      </div>
+    </div>
+    <div class="finding">
+      <div class="f-sev i">Q2</div>
+      <div class="f-body">
+        <div class="f-title">What does the app send over the network — and can I read it?</div>
+        <div class="f-detail">Burp proxy, SSL pinning bypass, request modification, IDOR testing. Network traffic is the API contract made visible. Finding an endpoint, modifying a parameter, and seeing another user's data is always the highest-severity finding available.</div>
+      </div>
+    </div>
+    <div class="finding">
+      <div class="f-sev i">Q3</div>
+      <div class="f-body">
+        <div class="f-title">What security controls run at runtime — and can they be bypassed?</div>
+        <div class="f-detail">Jailbreak detection, SSL pinning, biometric auth, PIN validation, root checks. Every check is a method call that can be hooked. Read the static analysis output first so you know exactly which method to target.</div>
+      </div>
+    </div>
+    <div class="finding">
+      <div class="f-sev i">Q4</div>
+      <div class="f-body">
+        <div class="f-title">What sensitive data passes through memory at runtime?</div>
+        <div class="f-detail">Decrypted tokens, plaintext passwords, session keys — all must exist in memory while the app uses them. Memory dumps at the right moment capture data that was never written to disk.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ S2: ENVIRONMENT ═══ -->
+<div class="div"></div>
+<div class="section" id="s2">
+  <div class="sec-head">
+    <span class="sec-num">02</span>
+    <div>
+      <h2>Environment Setup &amp; Device Preparation</h2>
+      <p class="sec-sub">A properly configured jailbroken device is the foundation. Get this right before touching any app.</p>
+    </div>
+  </div>
+
+  <div class="think">
+    <div class="think-label">// ANALYST THINKING</div>
+    <p>The jailbreak ecosystem changes with every iOS version. Checkra1n works on devices with A11 chips and below (iPhone X and older) across wide iOS ranges because it exploits a bootrom vulnerability. Unc0ver and Palera1n cover newer devices on specific iOS versions. Before starting any engagement, confirm your jailbreak tool supports the target iOS version and that Frida, OpenSSH, and your proxy CA certificate are all properly installed. A misconfigured environment wastes hours. Spend 30 minutes getting it right first.</p>
+  </div>
+
+  <h3>Jailbreak and Core Tool Installation</h3>
+  <div class="cmd-block">
+    <div class="cmd-head">device setup — via Cydia/Sileo on jailbroken device</div>
+    <div class="cmd-row"><span class="cmd-t"># Install via Cydia or Sileo package manager on device:
+OpenSSH          — remote shell access over USB tunnel
+Frida            — add repo: https://build.frida.re
+SSL Kill Switch 2 — add repo: https://julioverne.github.io
+AppSync Unified  — install unsigned IPAs
+NewTerm 2        — terminal on device (useful fallback)</span><span class="cmd-n">install these first on the jailbroken device</span></div>
+  </div>
+
+  <div class="cmd-block">
+    <div class="cmd-head">mac — tunnel SSH over USB and verify connection</div>
+    <div class="cmd-row"><span class="cmd-t">brew install usbmuxd iproxy</span><span class="cmd-n">USB multiplexer tools</span></div>
+    <div class="cmd-row"><span class="cmd-t">iproxy 2222 22 &</span><span class="cmd-n">tunnel device SSH port 22 to local port 2222</span></div>
+    <div class="cmd-row"><span class="cmd-t">ssh -p 2222 root&#64;localhost</span><span class="cmd-n">connect — default password is 'alpine', change it immediately</span></div>
+    <div class="cmd-row"><span class="cmd-t">passwd</span><span class="cmd-n">ALWAYS change default root password on jailbroken device</span></div>
+    <div class="cmd-row"><span class="cmd-t">frida-ps -U</span><span class="cmd-n">list running processes via USB — confirms Frida server is running</span></div>
+    <div class="cmd-row"><span class="cmd-t">frida-ps -U | grep -i target</span><span class="cmd-n">find your target app process name</span></div>
+  </div>
+
+  <h3>Burp Suite Proxy — iOS Certificate Installation</h3>
+  <div class="cmd-block">
+    <div class="cmd-head">proxy setup for iOS</div>
+    <div class="cmd-row"><span class="cmd-t"># On Burp: Proxy → Options → set listener to 0.0.0.0:8080</span><span class="cmd-n">listen on all interfaces</span></div>
+    <div class="cmd-row"><span class="cmd-t"># On iPhone: Settings → WiFi → (i) → HTTP Proxy → Manual
+# Host: your Mac's IP    Port: 8080</span><span class="cmd-n">point device at Burp</span></div>
+    <div class="cmd-row"><span class="cmd-t"># Browser on phone: http://burpsuite (or http://burp)
+# Download CA cert → install profile</span><span class="cmd-n">download Burp CA</span></div>
+    <div class="cmd-row"><span class="cmd-t"># Settings → General → VPN &amp; Device Management → trust profile</span><span class="cmd-n">install the cert profile</span></div>
+    <div class="cmd-row"><span class="cmd-t"># Settings → General → About → Certificate Trust Settings → toggle Burp CA ON</span><span class="cmd-n">CRITICAL step — enable full trust</span></div>
+  </div>
+
+  <div class="callout wa">
+    <span class="callout-icon">⚠</span>
+    <span>On iOS 14+, installing the Burp CA certificate is not enough on its own — you must also enable <strong>full trust</strong> for it in Settings → General → About → Certificate Trust Settings. Without this second step, iOS will not trust the certificate for TLS, and Burp will see connection errors rather than intercepted traffic.</span>
+  </div>
+
+  <h3>Install Target App (if not from App Store)</h3>
+  <div class="cmd-block">
+    <div class="cmd-head">sideload IPA onto jailbroken device</div>
+    <div class="cmd-row"><span class="cmd-t">ideviceinstaller -i target.ipa</span><span class="cmd-n">install via libimobiledevice</span></div>
+    <div class="cmd-row"><span class="cmd-t">ios-deploy --bundle target.app</span><span class="cmd-n">alternative: install .app bundle directly</span></div>
+    <div class="cmd-row"><span class="cmd-t"># Or: with AppSync Unified installed on device,
+# use Filza or iFunBox to copy and install IPA</span><span class="cmd-n">manual install via file manager on device</span></div>
+    <div class="cmd-row"><span class="cmd-t">frida-ps -Ua</span><span class="cmd-n">list installed apps — confirm target is installed, get bundle ID</span></div>
+  </div>
+</div>
+
+<!-- ═══ S3: FRIDA ═══ -->
+<div class="div"></div>
+<div class="section" id="s3">
+  <div class="sec-head">
+    <span class="sec-num">03</span>
+    <div>
+      <h2>Frida on iOS — Runtime Instrumentation</h2>
+      <p class="sec-sub">Frida gives you a JavaScript runtime inside the app process. Every ObjC method, every Swift function, every C symbol is hookable.</p>
+    </div>
+  </div>
+
+  <div class="think">
+    <div class="think-label">// ANALYST THINKING</div>
+    <p>Frida on iOS is more powerful than Frida on Android because Objective-C's runtime exposes more information. On Android, hooking requires knowing the exact class and method name. On iOS, ObjC.classes gives you every class in memory. ObjC.classes.ClassName.$ownMethods gives you every method on that class. You can enumerate what exists, then hook what matters — without reading a single line of decompiled source first. This runtime enumeration approach is particularly useful when you don't have a decrypted binary for static analysis.</p>
+  </div>
+
+  <h3>Frida Basics on iOS</h3>
+  <div class="cmd-block">
+    <div class="cmd-head">frida — connect and verify</div>
+    <div class="cmd-row"><span class="cmd-t">frida-ps -Ua</span><span class="cmd-n">list all installed apps with bundle IDs</span></div>
+    <div class="cmd-row"><span class="cmd-t">frida -U com.example.bankapp</span><span class="cmd-n">attach interactive REPL to running app</span></div>
+    <div class="cmd-row"><span class="cmd-t">frida -U -f com.example.bankapp</span><span class="cmd-n">spawn app fresh from Frida (more reliable for early hooks)</span></div>
+    <div class="cmd-row"><span class="cmd-t">frida -U -f com.example.bankapp --no-pause</span><span class="cmd-n">spawn without pausing at entry point</span></div>
+    <div class="cmd-row"><span class="cmd-t">frida -U -l hook.js com.example.bankapp</span><span class="cmd-n">attach and load script from file</span></div>
+    <div class="cmd-row"><span class="cmd-t">frida -U -f com.example.bankapp -l hook.js --no-pause</span><span class="cmd-n">spawn + load script — most common workflow</span></div>
+  </div>
+
+  <h3>Runtime Class and Method Enumeration</h3>
+  <p class="body">This is the iOS-specific superpower. You don't need a decrypted binary to enumerate classes and methods — Frida can read them directly from the running ObjC runtime.</p>
+
+  <div class="cmd-block">
+    <div class="cmd-head">frida REPL — enumerate classes and methods at runtime</div>
+    <div class="cmd-row"><span class="cmd-t">// List all classes loaded in the app
+ObjC.classes</span><span class="cmd-n">returns object with all class names as keys</span></div>
+    <div class="cmd-row"><span class="cmd-t">// Find security-relevant classes
+Object.keys(ObjC.classes).filter(c =>
+  /auth|login|session|token|crypt|pin|password|biometric|keychain|network|pinning/i.test(c)
+)</span><span class="cmd-n">filter by keyword — pipe to console.log</span></div>
+    <div class="cmd-row"><span class="cmd-t">// List all methods on a class
+ObjC.classes.AuthManager.$ownMethods</span><span class="cmd-n">returns array of method selectors</span></div>
+    <div class="cmd-row"><span class="cmd-t">// List all protocols a class conforms to
+ObjC.classes.NetworkManager.$protocols</span><span class="cmd-n">reveals delegate protocols — URLSessionDelegate etc</span></div>
+    <div class="cmd-row"><span class="cmd-t">// Get all instances of a class currently in memory
+ObjC.chooseSync(ObjC.classes.AuthManager)</span><span class="cmd-n">find live instances — read their properties directly</span></div>
+  </div>
+
+  <div class="out-block">
+    <div class="out-label">Runtime class enumeration — finding targets without a decrypted binary</div>
+    <pre class="out-pre">[iOS Device]-> Object.keys(ObjC.classes).filter(c =>
+  /auth|session|token|pin|crypt/i.test(c)
+)
+
+<span class="g">[
+  "AuthManager",
+  "SessionController",
+  "TokenStorage",
+  "PinValidator",
+  "CryptoHelper",
+  "BiometricAuthManager"
+]</span>
+
+[iOS Device]-> ObjC.classes.AuthManager.$ownMethods
+
+<span class="g">[
+  "- loginWithUsername:password:",
+  "- retrieveAuthToken",
+  "- storeTokenInKeychain:",
+  <span class="h">"- validatePinLocally:",</span>        &lt;-- client-side PIN validation — hook this
+  "- refreshAccessToken",
+  "- isAuthenticated",
+  <span class="h">"- disableSSLValidation"</span>         &lt;-- this method exists — find where it's called
+]</span>
+
+[iOS Device]-> ObjC.chooseSync(ObjC.classes.TokenStorage)[0].authToken
+<span class="h">"eyJhbGciOiJIUzI1NiJ9.eyJ1c2VyIjoiam9obiJ9.abc"</span>   &lt;-- live token from memory</pre>
+  </div>
+
+  <h3>Hooking ObjC Methods — The Full Pattern</h3>
+
+  <div class="out-block">
+    <div class="out-label">Complete Frida hook — intercept login credentials before they leave the app</div>
+    <pre class="out-pre">// hook_login.js
+if (ObjC.available) {
+  var AuthManager = ObjC.classes.AuthManager;
+
+  Interceptor.attach(
+    AuthManager["- loginWithUsername:password:"].implementation,
+    {
+      onEnter: function(args) {
+        <span class="c">// args[0] = self, args[1] = selector, args[2]+ = method args</span>
+        var username = new ObjC.Object(args[2]).toString();
+        var password = new ObjC.Object(args[3]).toString();
+
+        console.log("[+] loginWithUsername:password: called");
+        console.log("    username: " + username);
+        console.log(<span class="h">"    password: " + password</span>);   <span class="c">// plaintext before any crypto</span>
+      },
+      onLeave: function(retval) {
+        console.log("    return value: " + retval);
+      }
+    }
+  );
+} else {
+  console.log("[-] ObjC runtime not available");
+}</pre>
+  </div>
+
+  <h3>Hooking Swift Methods</h3>
+  <p class="body">Swift methods cannot be hooked via ObjC.classes unless the method is marked <code>@objc</code> or the class inherits from NSObject. For pure Swift, use Module.findExportByName with the demangled symbol, or use interceptor on the address directly.</p>
+
+  <div class="out-block">
+    <div class="out-label">Hooking Swift methods — two approaches</div>
+    <pre class="out-pre"><span class="c">// Approach 1: Swift method marked @objc or in NSObject subclass</span>
+<span class="c">// Works with standard ObjC.classes hook above</span>
+
+<span class="c">// Approach 2: Pure Swift — find address by demangled symbol name</span>
+var swiftFunc = Module.findExportByName(
+  "TargetApp",
+  <span class="c">// Mangled Swift symbol name — get from: nm TargetApp | grep validatePin</span>
+  "$s9BankApp12PinValidatorC11validatePinySbSSF"
+);
+
+if (swiftFunc) {
+  Interceptor.attach(swiftFunc, {
+    onEnter: function(args) {
+      <span class="c">// Swift calling convention differs from ObjC</span>
+      <span class="c">// args[0] = first argument (pin string pointer)</span>
+      console.log("[+] validatePin called");
+    },
+    onLeave: function(retval) {
+      console.log("    result: " + retval);
+      <span class="h">retval.replace(1);</span>   <span class="c">// replace return value — 1 = true = bypass</span>
+    }
+  });
+}
+
+<span class="c">// Approach 3: Search memory for function pattern</span>
+var results = Memory.scanSync(
+  Process.findModuleByName("TargetApp").base,
+  Process.findModuleByName("TargetApp").size,
+  "?? ?? ?? ?? ?? ?? validatePin ??"  <span class="c">// pattern — use after Ghidra analysis</span>
+);</pre>
+  </div>
+</div>
+
+<!-- ═══ S4: OBJECTION ═══ -->
+<div class="div"></div>
+<div class="section" id="s4">
+  <div class="sec-head">
+    <span class="sec-num">04</span>
+    <div>
+      <h2>Objection — Interactive Frida Shell</h2>
+      <p class="sec-sub">objection wraps Frida in a purpose-built CLI for mobile pentesting. Most common tasks are single commands.</p>
+    </div>
+  </div>
+
+  <div class="think">
+    <div class="think-label">// ANALYST THINKING</div>
+    <p>I use objection as my first tool on every iOS engagement. It handles jailbreak detection bypass, SSL pinning bypass, file system browsing, Keychain dumping, and class/method listing with single commands — no custom Frida scripts needed for these. I write custom Frida scripts only when objection doesn't cover the specific hook I need. objection is the 80% solution; custom Frida handles the remaining 20%.</p>
+  </div>
+
+  <h3>Core objection Workflow</h3>
+  <div class="cmd-block">
+    <div class="cmd-head">objection — attach and explore</div>
+    <div class="cmd-row"><span class="cmd-t">objection -g com.example.bankapp explore</span><span class="cmd-n">attach to running app — opens interactive shell</span></div>
+    <div class="cmd-row"><span class="cmd-t">objection -g com.example.bankapp explore --startup-command "ios jailbreak disable"</span><span class="cmd-n">bypass jailbreak detection on attach</span></div>
+    <div class="cmd-row"><span class="cmd-t">objection -g com.example.bankapp explore -s hook.js</span><span class="cmd-n">load custom Frida script on attach</span></div>
+  </div>
+
+  <div class="cmd-block">
+    <div class="cmd-head">objection shell — essential iOS commands</div>
+    <div class="cmd-row"><span class="cmd-t">ios jailbreak disable</span><span class="cmd-n">bypass jailbreak detection — hooks common checks</span></div>
+    <div class="cmd-row"><span class="cmd-t">ios jailbreak simulate</span><span class="cmd-n">simulate jailbreak — tests detection logic</span></div>
+    <div class="cmd-row"><span class="cmd-t">ios sslpinning disable</span><span class="cmd-n">bypass SSL pinning — hooks URLSession and Security framework</span></div>
+    <div class="cmd-row"><span class="cmd-t">ios ui biometrics_bypass</span><span class="cmd-n">bypass TouchID/FaceID — hooks LAContext evaluatePolicy</span></div>
+    <div class="cmd-row"><span class="cmd-t">ios keychain dump</span><span class="cmd-n">dump ALL Keychain items — most valuable single command on iOS</span></div>
+    <div class="cmd-row"><span class="cmd-t">ios keychain dump --json keychain.json</span><span class="cmd-n">save Keychain dump to file</span></div>
+    <div class="cmd-row"><span class="cmd-t">ios nsuserdefaults get</span><span class="cmd-n">read all NSUserDefaults for current app</span></div>
+    <div class="cmd-row"><span class="cmd-t">ios pasteboard monitor</span><span class="cmd-n">monitor clipboard — what sensitive data gets copied?</span></div>
+    <div class="cmd-row"><span class="cmd-t">env</span><span class="cmd-n">show all app container directory paths</span></div>
+    <div class="cmd-row"><span class="cmd-t">file ls /</span><span class="cmd-n">browse file system from root</span></div>
+    <div class="cmd-row"><span class="cmd-t">file ls /var/mobile/Containers/Data/Application/</span><span class="cmd-n">app data containers</span></div>
+    <div class="cmd-row"><span class="cmd-t">file download /path/to/file ./local_copy</span><span class="cmd-n">pull file from device</span></div>
+    <div class="cmd-row"><span class="cmd-t">ios hooking list classes</span><span class="cmd-n">list all ObjC classes in memory</span></div>
+    <div class="cmd-row"><span class="cmd-t">ios hooking list class_methods AuthManager</span><span class="cmd-n">list methods on specific class</span></div>
+    <div class="cmd-row"><span class="cmd-t">ios hooking watch class AuthManager</span><span class="cmd-n">hook ALL methods on class — log every call with args</span></div>
+    <div class="cmd-row"><span class="cmd-t">ios hooking watch method "-[AuthManager validatePinLocally:]" --dump-args --dump-return</span><span class="cmd-n">hook specific method — print args and return value</span></div>
+    <div class="cmd-row"><span class="cmd-t">ios monitor crypto</span><span class="cmd-n">monitor CommonCrypto calls — algorithm, key, IV, plaintext/ciphertext</span></div>
+  </div>
+
+  <div class="out-block">
+    <div class="out-label">ios hooking watch class — watching every method call in real time</div>
+    <pre class="out-pre">$ ios hooking watch class AuthManager
+
+[objection] (agent) [io.github.as0ler.frida-ios-hook] Hooking -[AuthManager loginWithUsername:password:]
+[objection] (agent) [io.github.as0ler.frida-ios-hook] Hooking -[AuthManager validatePinLocally:]
+[objection] (agent) [io.github.as0ler.frida-ios-hook] Hooking -[AuthManager retrieveAuthToken]
+...
+
+<span class="c">-- (user taps login button) --</span>
+
+(agent) Called: <span class="y">-[AuthManager loginWithUsername:password:]</span>
+  username arg: john.doe&#64;example.com
+  <span class="h">password arg: MyBankingPassword123!</span>   &lt;-- CRITICAL — plaintext credential
+  Returned: 1
+
+(agent) Called: <span class="y">-[AuthManager storeTokenInKeychain:]</span>
+  token arg: eyJhbGciOiJIUzI1NiJ9...      &lt;-- token being stored
+  Returned: 1
+
+(agent) Called: <span class="y">-[AuthManager validatePinLocally:]</span>
+  pin arg: 1234
+  <span class="h">Returned: 1</span>   &lt;-- returns BOOL — hook to always return 1 for bypass</pre>
+  </div>
+</div>
+
+<!-- ═══ S5: SSL PINNING ═══ -->
+<div class="div"></div>
+<div class="section" id="s5">
+  <div class="sec-head">
+    <span class="sec-num">05</span>
+    <div>
+      <h2>SSL Pinning Bypass</h2>
+      <p class="sec-sub">Four different bypass techniques — because no single approach works for every app. Know all four and know when to use each.</p>
+    </div>
+  </div>
+
+  <div class="think">
+    <div class="think-label">// ANALYST THINKING</div>
+    <p>SSL pinning bypass on iOS has a clear priority order. Start with the easiest — objection's ios sslpinning disable covers URLSession delegate pinning and most Alamofire implementations in one command. If that fails, try SSL Kill Switch 2 (a Cydia tweak that patches at a lower level). If both fail, I read the static analysis output from class-dump to find the exact pinning method name, then write a targeted Frida hook. If all three fail and the app uses certificate transparency or public key pinning at a level that resists all of these, I patch the binary directly using apktool-style patching with jtool2, repackage, and resign.</p>
+  </div>
+
+  <h3>Method 1 — objection (Try First)</h3>
+  <div class="cmd-block">
+    <div class="cmd-head">objection ssl bypass — covers most apps</div>
+    <div class="cmd-row"><span class="cmd-t">objection -g com.example.bankapp explore</span><span class="cmd-n">attach</span></div>
+    <div class="cmd-row"><span class="cmd-t">ios sslpinning disable</span><span class="cmd-n">hooks URLSession delegate, NSURLSession, Alamofire ServerTrustManager</span></div>
+    <div class="cmd-row"><span class="cmd-t"># Verify: use Burp Proxy — if you see HTTPS traffic, bypass worked</span><span class="cmd-n">confirm in Burp</span></div>
+  </div>
+
+  <h3>Method 2 — SSL Kill Switch 2 (System-Level)</h3>
+  <div class="cmd-block">
+    <div class="cmd-head">SSL Kill Switch 2 — patches SecureTransport and NSURLSession globally</div>
+    <div class="cmd-row"><span class="cmd-t"># Install SSL Kill Switch 2 via Cydia: add repo julioverne.github.io</span><span class="cmd-n">install on device</span></div>
+    <div class="cmd-row"><span class="cmd-t"># Settings → SSL Kill Switch 2 → toggle "Disable Certificate Validation" ON</span><span class="cmd-n">enable globally</span></div>
+    <div class="cmd-row"><span class="cmd-t"># Respring the device, reopen the app, verify in Burp</span><span class="cmd-n">requires respring to take effect</span></div>
+  </div>
+
+  <div class="callout in">
+    <span class="callout-icon">ℹ</span>
+    <span>SSL Kill Switch 2 patches at the <strong>SecureTransport</strong> layer — Apple's low-level TLS library. This catches pinning implementations that bypass URLSession entirely by using raw SecTrust functions. If objection doesn't work but Kill Switch 2 does, the app is doing something non-standard — investigate what framework it's using for TLS.</span>
+  </div>
+
+  <h3>Method 3 — Targeted Frida Hook (When You Know the Method)</h3>
+
+  <div class="out-block">
+    <div class="out-label">Custom Frida script — bypass specific URLSession delegate pinning</div>
+    <pre class="out-pre">// ssl_bypass.js — targeted hook when generic bypasses fail
+
+if (ObjC.available) {
+
+  <span class="c">// Hook URLSession:didReceiveChallenge:completionHandler:</span>
+  <span class="c">// Find the class implementing this from static analysis (class-dump)</span>
+  var NetworkManager = ObjC.classes.NetworkManager;
+  var method = NetworkManager[
+    "- URLSession:didReceiveChallenge:completionHandler:"
+  ];
+
+  if (method) {
+    Interceptor.attach(method.implementation, {
+      onEnter: function(args) {
+        <span class="c">// args[3] = NSURLAuthenticationChallenge</span>
+        <span class="c">// args[4] = completionHandler block</span>
+        var completionHandler = new ObjC.Block(args[4]);
+        var NSURLCredential = ObjC.classes.NSURLCredential;
+        var challenge = new ObjC.Object(args[3]);
+        var credential = NSURLCredential.credentialForTrust_(
+          challenge.protectionSpace().serverTrust()
+        );
+
+        <span class="h">// Call completion handler with UseCredential — bypass pin check</span>
+        completionHandler.implementation(
+          0,   <span class="c">// NSURLSessionAuthChallengeUseCredential = 0</span>
+          credential
+        );
+
+        console.log("[+] SSL pinning bypassed for: " +
+          challenge.protectionSpace().host());
+
+        this.bypass = true;
+      },
+      onLeave: function(retval) {
+        if (this.bypass) {
+          <span class="c">// Prevent original handler from running</span>
+        }
+      }
+    });
+    console.log("[+] Hooked URLSession:didReceiveChallenge:");
+  }
+
+  <span class="c">// Also hook SecTrustEvaluate for low-level bypass</span>
+  var SecTrustEvaluate = Module.findExportByName("Security", "SecTrustEvaluate");
+  if (SecTrustEvaluate) {
+    Interceptor.attach(SecTrustEvaluate, {
+      onLeave: function(retval) {
+        retval.replace(<span class="g">0</span>);   <span class="c">// 0 = errSecSuccess — always pass</span>
+      }
+    });
+    console.log("[+] Hooked SecTrustEvaluate");
+  }
+}</pre>
+  </div>
+
+  <h3>Method 4 — Binary Patch (When All Runtime Bypasses Fail)</h3>
+  <div class="cmd-block">
+    <div class="cmd-head">jtool2 — patch pinning check out of binary</div>
+    <div class="cmd-row"><span class="cmd-t">jtool2 -d com.example.bankapp.app/TargetApp | grep -i "pinning\|trusteval\|serverTrust"</span><span class="cmd-n">find pinning function offset in disassembly</span></div>
+    <div class="cmd-row"><span class="cmd-t"># In Hopper/Ghidra: find the validation function
+# Change conditional branch (B.NE → B, or CBZ → B) so it always passes
+# Or: NOP out the SecTrustEvaluateWithError call</span><span class="cmd-n">patch the conditional</span></div>
+    <div class="cmd-row"><span class="cmd-t">jtool2 --patch offset:value TargetApp</span><span class="cmd-n">apply binary patch at specific offset</span></div>
+    <div class="cmd-row"><span class="cmd-t">codesign -f -s - TargetApp</span><span class="cmd-n">re-sign with ad-hoc signature</span></div>
+    <div class="cmd-row"><span class="cmd-t">ideviceinstaller -i patched.ipa</span><span class="cmd-n">reinstall patched binary</span></div>
+  </div>
+
+  <div class="findings">
+    <div class="finding">
+      <div class="f-sev h">HIGH</div>
+      <div class="f-body">
+        <div class="f-title">No SSL pinning — Burp intercepts HTTPS without any bypass</div>
+        <div class="f-detail">After installing the Burp CA certificate and setting the proxy, the app's HTTPS traffic is immediately visible. The app trusts user-installed CA certificates with no additional validation. Any attacker on the same network with a proxy and a self-signed cert can intercept all traffic. Document this as absence of certificate pinning.</div>
+      </div>
+    </div>
+    <div class="finding">
+      <div class="f-sev m">MEDIUM</div>
+      <div class="f-body">
+        <div class="f-title">Pinning bypassable with a single objection command</div>
+        <div class="f-detail">The app implements pinning, but it relies on URLSession delegate hooks that objection overrides trivially. This provides meaningful protection against casual MiTM attacks but not against a targeted attacker with a jailbroken device. Document the bypass method used — it demonstrates the protection is insufficient for a determined attacker.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ S6: KEYCHAIN ═══ -->
+<div class="div"></div>
+<div class="section" id="s6">
+  <div class="sec-head">
+    <span class="sec-num">06</span>
+    <div>
+      <h2>Keychain Analysis</h2>
+      <p class="sec-sub">The iOS Keychain is the right place to store secrets — but wrong accessibility levels make it readable when it shouldn't be. Dump it and read every item.</p>
+    </div>
+  </div>
+
+  <div class="think">
+    <div class="think-label">// ANALYST THINKING</div>
+    <p>Keychain analysis is the iOS equivalent of SQLite + SharedPreferences analysis on Android. The Keychain dump tells me everything the app has stored — tokens, certificates, passwords, PINs — and the accessibility attribute on each item tells me under what conditions that item is accessible. kSecAttrAccessibleAlways on an auth token means that token is readable even when the device is powered off with the right key. kSecAttrAccessibleAfterFirstUnlock means the token is readable on a locked screen by any process with appropriate entitlements. Read the accessibility level, not just the value.</p>
+  </div>
+
+  <h3>Dump the Keychain</h3>
+  <div class="cmd-block">
+    <div class="cmd-head">keychain dump — multiple methods</div>
+    <div class="cmd-row"><span class="cmd-t">ios keychain dump</span><span class="cmd-n">objection — most convenient, shows accessibility level</span></div>
+    <div class="cmd-row"><span class="cmd-t">ios keychain dump --json kc.json && cat kc.json | python3 -m json.tool</span><span class="cmd-n">save and pretty-print</span></div>
+    <div class="cmd-row"><span class="cmd-t"># Alternative: Keychain-Dumper on device (via SSH)
+./keychain-dumper</span><span class="cmd-n">standalone tool — dumps all accessible items</span></div>
+    <div class="cmd-row"><span class="cmd-t"># Alternative: Passionfruit (web UI)
+# Connect device, run passionfruit, browse to app → Keychain tab</span><span class="cmd-n">GUI option</span></div>
+  </div>
+
+  <div class="out-block">
+    <div class="out-label">Keychain dump — what to look for and how to interpret accessibility</div>
+    <pre class="out-pre">$ ios keychain dump
+
+Save File: No
+[
+  {
+    "item_class": "genp",             <span class="c">generic password</span>
+    "account": "authToken",
+    "service": "com.example.bankapp",
+    <span class="h">"data": "eyJhbGciOiJIUzI1NiJ9.eyJ1c2VyIjoiam9obiJ9.abc123"</span>,
+    <span class="h">"accessibility": "kSecAttrAccessibleAfterFirstUnlock"</span>,
+    <span class="c">// FINDING: token readable on locked screen — wrong accessibility level</span>
+    "access_control": null            <span class="c">// no biometric protection</span>
+  },
+  {
+    "item_class": "genp",
+    "account": "userPassword",
+    "service": "com.example.bankapp.auth",
+    <span class="h">"data": "MyBankingPassword123!"</span>,    <span class="c">// CRITICAL — password stored, not just token</span>
+    <span class="h">"accessibility": "kSecAttrAccessibleAlways"</span>,
+    <span class="c">// CRITICAL: readable even when device is locked/off</span>
+    "access_control": null
+  },
+  {
+    "item_class": "genp",
+    "account": "sessionToken",
+    "service": "com.example.bankapp",
+    "data": "sess_live_abc123def456",
+    <span class="g">"accessibility": "kSecAttrAccessibleWhenUnlockedThisDeviceOnly"</span>,
+    <span class="c">// CORRECT: only accessible when device unlocked, not backed up</span>
+    "access_control": {
+      <span class="g">"biometryCurrentSet": true</span>  <span class="c">// requires biometric — correct</span>
+    }
+  }
+]</pre>
+  </div>
+
+  <div class="findings">
+    <div class="finding">
+      <div class="f-sev c">CRITICAL</div>
+      <div class="f-body">
+        <div class="f-title">Password stored in Keychain (any item_class containing plaintext password)</div>
+        <div class="f-detail">Passwords should never be stored — only tokens derived from authentication that can be revoked server-side. A plaintext password in the Keychain means: if the device is jailbroken, the password is immediately extractable. If kSecAttrAccessibleAlways is set, it's readable even from a locked device via a jailbreak. The user's password for this app may be reused on other services.</div>
+      </div>
+    </div>
+    <div class="finding">
+      <div class="f-sev c">CRITICAL</div>
+      <div class="f-body">
+        <div class="f-title">kSecAttrAccessibleAlways on any authentication credential</div>
+        <div class="f-detail">This accessibility level makes the Keychain item readable even when the device is locked, asleep, or has never been unlocked after a reboot. Combined with a jailbreak exploit that works pre-first-unlock, this credential is accessible on a seized powered-off device. Any token or password with this attribute should be flagged critical regardless of what the item contains.</div>
+      </div>
+    </div>
+    <div class="finding">
+      <div class="f-sev h">HIGH</div>
+      <div class="f-body">
+        <div class="f-title">Auth token with kSecAttrAccessibleAfterFirstUnlock and no access_control</div>
+        <div class="f-detail">After the first unlock following a reboot, the device re-locks the screen but items with this accessibility remain readable. A screen-locked device that has been used that day exposes these tokens. Without an access_control biometric requirement, any code running in the process (including Frida) can read the token without prompting the user.</div>
+      </div>
+    </div>
+    <div class="finding">
+      <div class="f-sev h">HIGH</div>
+      <div class="f-body">
+        <div class="f-title">Keychain items shared across apps (matching service name used by multiple apps)</div>
+        <div class="f-detail">If the keychain-access-groups entitlement includes a shared group ID (from static analysis), and a token is stored in a service name accessible to that group, every app sharing the group can read that token. Find companion apps on the App Store with the same team ID and check whether they share the Keychain group.</div>
+      </div>
+    </div>
+  </div>
+
+  <h3>Keychain Monitoring — Watch Items Being Written</h3>
+  <div class="out-block">
+    <div class="out-label">Frida — hook SecItemAdd to catch Keychain writes in real time</div>
+    <pre class="out-pre">// keychain_monitor.js — intercept all Keychain write operations
+
+var SecItemAdd = Module.findExportByName("Security", "SecItemAdd");
+var SecItemUpdate = Module.findExportByName("Security", "SecItemUpdate");
+
+function logKeychainOp(name, args) {
+  var query = new ObjC.Object(args[0]);
+  console.log("\n[+] " + name);
+  console.log("    query: " + query.description());
+}
+
+Interceptor.attach(SecItemAdd, {
+  onEnter: function(args) {
+    logKeychainOp("SecItemAdd", args);
+    <span class="c">// Extract kSecValueData from query dict to see what's being stored</span>
+    var query = ObjC.Object.fromPointer(args[0]);
+    var data = query.objectForKey_("v_Data");
+    if (data) {
+      <span class="h">console.log("    data: " + data.description());</span>
+    }
+  }
+});
+
+Interceptor.attach(SecItemUpdate, {
+  onEnter: function(args) { logKeychainOp("SecItemUpdate", args); }
+});
+
+console.log("[*] Keychain monitor active");</pre>
+  </div>
+</div>
+
+<!-- ═══ S7: FILE SYSTEM ═══ -->
+<div class="div"></div>
+<div class="section" id="s7">
+  <div class="sec-head">
+    <span class="sec-num">07</span>
+    <div>
+      <h2>File System Analysis</h2>
+      <p class="sec-sub">The app container, shared containers, and temporary directories — map them all and read everything sensitive.</p>
+    </div>
+  </div>
+
+  <div class="think">
+    <div class="think-label">// ANALYST THINKING</div>
+    <p>iOS app containers are sandboxed — each app lives in its own UUID-named directory at /var/mobile/Containers/Data/Application/[UUID]/. On a jailbroken device I can read all of these. The container structure always follows the same pattern: Documents/, Library/, tmp/. Documents/ is backed up. Library/Preferences/ contains NSUserDefaults plists. Library/Application Support/ often has SQLite databases. Library/Caches/ has cached network responses. Crash logs at Library/Logs/CrashReporter/ may contain sensitive data from the crash context. Temporary files in tmp/ are cleared on reboot — check them while the app is running.</p>
+  </div>
+
+  <h3>Find and Navigate the App Container</h3>
+  <div class="cmd-block">
+    <div class="cmd-head">locate app container via SSH</div>
+    <div class="cmd-row"><span class="cmd-t">ssh -p 2222 root&#64;localhost</span><span class="cmd-n">connect to device</span></div>
+    <div class="cmd-row"><span class="cmd-t">find /var/mobile/Containers/Data/Application/ -name "*.app" 2>/dev/null</span><span class="cmd-n">find all app bundles (not containers)</span></div>
+    <div class="cmd-row"><span class="cmd-t">find /var/mobile/Containers/Data/Application/ -maxdepth 2 -name "*.plist" | xargs grep -l "com.example.bankapp" 2>/dev/null</span><span class="cmd-n">find app container by bundle ID in metadata</span></div>
+    <div class="cmd-row"><span class="cmd-t"># Or via objection:
+env</span><span class="cmd-n">shows all container paths for current app — fastest method</span></div>
+    <div class="cmd-row"><span class="cmd-t">APP_CONTAINER=$(frida-ps -Ua | grep bankapp | awk '{print $1}' | head -1)
+# Then use Frida REPL:
+NSSearchPathForDirectoriesInDomains(9, 1, 1)[0]</span><span class="cmd-n">get Documents path from Frida REPL</span></div>
+  </div>
+
+  <div class="cmd-block">
+    <div class="cmd-head">complete file system survey via SSH</div>
+    <div class="cmd-row"><span class="cmd-t">find /var/mobile/Containers/Data/Application/[UUID]/ -type f | sort</span><span class="cmd-n">full file tree</span></div>
+    <div class="cmd-row"><span class="cmd-t">find /var/mobile/Containers/Data/Application/[UUID]/ -name "*.sqlite" -o -name "*.db" -o -name "*.sqlite3"</span><span class="cmd-n">all databases</span></div>
+    <div class="cmd-row"><span class="cmd-t">find /var/mobile/Containers/Data/Application/[UUID]/ -name "*.plist"</span><span class="cmd-n">all plist files</span></div>
+    <div class="cmd-row"><span class="cmd-t">ls -la /var/mobile/Containers/Data/Application/[UUID]/Documents/</span><span class="cmd-n">Documents — backed up to iCloud/iTunes by default</span></div>
+    <div class="cmd-row"><span class="cmd-t">ls -la /var/mobile/Containers/Data/Application/[UUID]/Library/Preferences/</span><span class="cmd-n">NSUserDefaults plists — plaintext XML</span></div>
+    <div class="cmd-row"><span class="cmd-t">cat /var/mobile/Containers/Data/Application/[UUID]/Library/Preferences/com.example.bankapp.plist</span><span class="cmd-n">NSUserDefaults — read for tokens/credentials</span></div>
+    <div class="cmd-row"><span class="cmd-t">find /var/mobile/Containers/Data/Application/[UUID]/Library/Caches/ -name "*.db"</span><span class="cmd-n">cached network responses — often contain tokens</span></div>
+    <div class="cmd-row"><span class="cmd-t">find /var/mobile/Containers/Data/Application/[UUID]/tmp/ -type f</span><span class="cmd-n">temp files — check while app is running</span></div>
+    <div class="cmd-row"><span class="cmd-t">find /var/mobile/Containers/Shared/AppGroup/ -path "*com.example*" -type f | head -30</span><span class="cmd-n">shared app group container — accessible by extensions</span></div>
+  </div>
+
+  <h3>NSURLCache — Cached HTTPS Responses</h3>
+  <p class="body">iOS caches HTTP responses in a SQLite database at Library/Caches/com.example.bankapp/Cache.db. This cache persists API responses — including authenticated responses — to disk. If the API doesn't return proper Cache-Control: no-store headers, sensitive data may be cached unencrypted.</p>
+
+  <div class="cmd-block">
+    <div class="cmd-head">read the URL response cache</div>
+    <div class="cmd-row"><span class="cmd-t">find /var/mobile/Containers/Data/Application/[UUID]/Library/Caches/ -name "Cache.db"</span><span class="cmd-n">find the URL cache database</span></div>
+    <div class="cmd-row"><span class="cmd-t">sqlite3 Cache.db .tables</span><span class="cmd-n">tables: cfurl_cache_response, cfurl_cache_blob_data, cfurl_cache_receiver_data</span></div>
+    <div class="cmd-row"><span class="cmd-t">sqlite3 Cache.db "SELECT request_key, time_stamp FROM cfurl_cache_response ORDER BY time_stamp DESC LIMIT 20"</span><span class="cmd-n">most recently cached URLs</span></div>
+    <div class="cmd-row"><span class="cmd-t">sqlite3 Cache.db "SELECT request_key FROM cfurl_cache_response WHERE request_key LIKE '%api%' OR request_key LIKE '%auth%'"</span><span class="cmd-n">find API/auth endpoint responses in cache</span></div>
+    <div class="cmd-row"><span class="cmd-t">sqlite3 Cache.db "SELECT receiver_data FROM cfurl_cache_receiver_data" | strings | grep -iE 'token|user|account|balance|card'</span><span class="cmd-n">read cached response bodies for sensitive data</span></div>
+  </div>
+
+  <div class="findings">
+    <div class="finding">
+      <div class="f-sev c">CRITICAL</div>
+      <div class="f-body">
+        <div class="f-title">Authentication token or PII in NSURLCache (Cache.db)</div>
+        <div class="f-detail">A cached API response containing a bearer token or personal data means this data is written to disk unencrypted and persists between sessions. On a stolen device accessed via jailbreak, or via an iTunes backup, the cached data is directly readable. The fix is always server-side: return Cache-Control: no-store for any authenticated response. The app cannot reliably clear the cache itself.</div>
+      </div>
+    </div>
+    <div class="finding">
+      <div class="f-sev h">HIGH</div>
+      <div class="f-body">
+        <div class="f-title">Sensitive data in Documents/ directory (iTunes/iCloud backup accessible)</div>
+        <div class="f-detail">Documents/ is included in iTunes and iCloud backups by default. A file here without NSFileProtectionComplete is readable via an unencrypted iTunes backup — no device access required. The attacker needs only access to the user's Mac or iCloud account. Files containing tokens, PII, or financial data in Documents/ should be moved to Library/Application Support/ with backup exclusion and proper file protection.</div>
+      </div>
+    </div>
+  </div>
+
+  <h3>Screenshot Cache — Sensitive Data in App Switcher</h3>
+  <div class="cmd-block">
+    <div class="cmd-head">app switcher screenshot check</div>
+    <div class="cmd-row"><span class="cmd-t">find /var/mobile/Containers/Data/Application/[UUID]/Library/SplashBoard/ -name "*.png" 2>/dev/null</span><span class="cmd-n">app switcher screenshots cached here</span></div>
+    <div class="cmd-row"><span class="cmd-t">find /var/mobile/Containers/Data/Application/[UUID]/ -name "snapshot*" -o -name "*.ktx" 2>/dev/null</span><span class="cmd-n">snapshot files — may capture sensitive UI state</span></div>
+  </div>
+
+  <div class="callout wa">
+    <span class="callout-icon">⚠</span>
+    <span>iOS takes a screenshot of the app when it's backgrounded (for the app switcher animation). If the app shows sensitive data — account balances, transaction history, PII — on screen when the user presses the home button, that screenshot is saved to disk. A well-implemented app calls <code>UIImageView(image: UIImage())</code> on applicationDidEnterBackground to blank the screen before the screenshot is taken. Test this manually: open the app to a sensitive screen, press Home, examine the snapshot file.</span>
+  </div>
+</div>
+
+<!-- ═══ S8: NETWORK ═══ -->
+<div class="div"></div>
+<div class="section" id="s8">
+  <div class="sec-head">
+    <span class="sec-num">08</span>
+    <div>
+      <h2>Network Traffic Analysis</h2>
+      <p class="sec-sub">With SSL pinning bypassed and Burp in position, reverse-engineer the entire API. Every parameter is a test case.</p>
+    </div>
+  </div>
+
+  <div class="think">
+    <div class="think-label">// ANALYST THINKING</div>
+    <p>Once I have Burp intercepting, I don't just watch traffic — I interact with every feature systematically. Every API call I capture goes into Burp Repeater. Every numeric ID, UUID, or user-specific parameter gets modified to test for IDOR. Every endpoint that returns data I check without the Authorization header to test authentication. Every endpoint that modifies data I test with other users' IDs. The goal is to find where the server trusts the client too much — where server-side authorisation is missing or insufficient.</p>
+  </div>
+
+  <h3>Systematic API Testing from Burp</h3>
+  <div class="cmd-block">
+    <div class="cmd-head">burp — methodical API coverage</div>
+    <div class="cmd-row"><span class="cmd-t"># Proxy tab → HTTP history — right-click any request → Send to Repeater</span><span class="cmd-n">capture baseline</span></div>
+    <div class="cmd-row"><span class="cmd-t"># In Repeater: remove Authorization header entirely → send
+# If response = 200 with data → broken authentication</span><span class="cmd-n">test auth requirement</span></div>
+    <div class="cmd-row"><span class="cmd-t"># Find numeric IDs in URL path: /api/v1/accounts/12345/transactions
+# Change 12345 to 12346 → send
+# If response = 200 with different user's data → IDOR CRITICAL</span><span class="cmd-n">IDOR test — most impactful finding</span></div>
+    <div class="cmd-row"><span class="cmd-t"># Find UUID parameters: /api/v1/users/abc-def-ghi/profile
+# Replace with UUID from another test account → IDOR test</span><span class="cmd-n">UUID IDOR — often overlooked</span></div>
+    <div class="cmd-row"><span class="cmd-t"># Find privilege-sensitive parameters: role=user → role=admin
+# Or: is_admin=false → is_admin=true in request body</span><span class="cmd-n">privilege escalation via parameter tampering</span></div>
+    <div class="cmd-row"><span class="cmd-t"># Burp → Scanner → Active Scan on captured requests</span><span class="cmd-n">automated scan for SQLi, XSS in API</span></div>
+  </div>
+
+  <h3>Network Monitoring via Frida (When Burp Can't See It)</h3>
+  <p class="body">Some apps use NSURLSession with background configurations that bypass the system proxy, or use URLProtocol overrides. Frida can hook the network layer directly to capture all traffic regardless of proxy settings.</p>
+
+  <div class="out-block">
+    <div class="out-label">Frida — hook NSURLSession to capture all requests bypassing proxy</div>
+    <pre class="out-pre">// network_monitor.js — captures all URLSession traffic regardless of proxy
+
+var NSURLSession = ObjC.classes.NSURLSession;
+var NSURLRequest = ObjC.classes.NSURLRequest;
+
+<span class="c">// Hook dataTaskWithRequest:completionHandler:</span>
+Interceptor.attach(
+  NSURLSession["- dataTaskWithRequest:completionHandler:"].implementation,
+  {
+    onEnter: function(args) {
+      var request = new ObjC.Object(args[2]);
+      var url = request.URL().absoluteString().toString();
+      var method = request.HTTPMethod().toString();
+      var headers = request.allHTTPHeaderFields().toString();
+      var body = request.HTTPBody();
+
+      console.log("\n[REQUEST] " + method + " " + url);
+      console.log("[HEADERS] " + headers);
+
+      if (body) {
+        var bodyStr = NSString.alloc().initWithData_encoding_(
+          body, 4 <span class="c">// NSUTF8StringEncoding</span>
+        );
+        <span class="h">console.log("[BODY] " + bodyStr);</span>
+      }
+    }
+  }
+);
+console.log("[*] Network monitor active");</pre>
+  </div>
+
+  <h3>Certificate Transparency and HPKP</h3>
+  <div class="cmd-block">
+    <div class="cmd-head">check for advanced transport security features</div>
+    <div class="cmd-row"><span class="cmd-t">strings "$APP/TargetApp" | grep -iE "certificateTransparency\|HPKP\|Public-Key-Pins\|expect-ct"</span><span class="cmd-n">advanced pinning mechanisms in binary</span></div>
+    <div class="cmd-row"><span class="cmd-t"># In Burp: check response headers for:
+# Expect-CT, Public-Key-Pins, Strict-Transport-Security</span><span class="cmd-n">server-enforced security headers</span></div>
+    <div class="cmd-row"><span class="cmd-t"># Test: send request to HTTP version of API endpoint
+# curl -v http://api.example.com/endpoint
+# Should 301/302 redirect to HTTPS — if 200, plaintext accepted</span><span class="cmd-n">HTTP downgrade test</span></div>
+  </div>
+</div>
+
+<!-- ═══ S9: RUNTIME MANIPULATION ═══ -->
+<div class="div"></div>
+<div class="section" id="s9">
+  <div class="sec-head">
+    <span class="sec-num">09</span>
+    <div>
+      <h2>Runtime Manipulation</h2>
+      <p class="sec-sub">Modify app behaviour at runtime — change return values, inject data, bypass business logic, and understand how the app makes decisions.</p>
+    </div>
+  </div>
+
+  <div class="think">
+    <div class="think-label">// ANALYST THINKING</div>
+    <p>Runtime manipulation is where static analysis pays off. From the class dump I know the method names. From the Frida enumeration I know which methods exist on live objects. Now I use that knowledge to change what the app does — not to break it, but to test whether its security controls are enforced server-side or only client-side. If I can bypass a check by changing a method's return value, the check is client-side only and can be bypassed by any user with a jailbroken device. The finding is not "we hooked it" — the finding is "server accepted the action without validating the client-side check result."</p>
+  </div>
+
+  <h3>Method Swizzling — Override Business Logic</h3>
+  <div class="out-block">
+    <div class="out-label">Frida — swizzle isAuthenticated to always return true</div>
+    <pre class="out-pre">// auth_bypass.js
+
+if (ObjC.available) {
+  var AuthManager = ObjC.classes.AuthManager;
+
+  <span class="c">// Override isAuthenticated — test if authentication is enforced server-side</span>
+  Interceptor.attach(
+    AuthManager["- isAuthenticated"].implementation,
+    {
+      onLeave: function(retval) {
+        console.log("[*] isAuthenticated original: " + retval);
+        retval.replace(<span class="h">1</span>);   <span class="c">// force return YES (true)</span>
+        console.log("[*] isAuthenticated replaced: 1 (bypassed)");
+      }
+    }
+  );
+
+  <span class="c">// Override validatePinLocally — bypass PIN check</span>
+  Interceptor.attach(
+    AuthManager["- validatePinLocally:"].implementation,
+    {
+      onEnter: function(args) {
+        console.log("[*] validatePin called with: " +
+          new ObjC.Object(args[2]).toString());
+      },
+      onLeave: function(retval) {
+        retval.replace(<span class="h">1</span>);   <span class="c">// any PIN is valid</span>
+        console.log("[*] PIN validation bypassed");
+      }
+    }
+  );
+}</pre>
+  </div>
+
+  <h3>Intercepting Crypto Operations</h3>
+  <div class="out-block">
+    <div class="out-label">Hook CCCrypt — intercept plaintext before encryption and after decryption</div>
+    <pre class="out-pre">// crypto_intercept.js — hook CommonCrypto at the C level
+
+var CCCrypt = Module.findExportByName("libSystem.B.dylib", "CCCrypt");
+<span class="c">// Also try: "libcommonCrypto.dylib" or "Security"</span>
+
+if (!CCCrypt) {
+  CCCrypt = Module.findExportByName(null, "CCCrypt");
+}
+
+if (CCCrypt) {
+  Interceptor.attach(CCCrypt, {
+    onEnter: function(args) {
+      this.op       = args[0].toInt32();  <span class="c">// 0=encrypt, 1=decrypt</span>
+      this.alg      = args[1].toInt32();  <span class="c">// 0=AES, 1=DES, 2=3DES</span>
+      this.options  = args[2].toInt32();  <span class="c">// 1=PKCS7, 2=ECB</span>
+      this.keyPtr   = args[3];
+      this.keyLen   = args[4].toInt32();
+      this.ivPtr    = args[5];
+      this.dataIn   = args[6];
+      this.dataInLen = args[7].toInt32();
+
+      var operation = this.op === 0 ? "ENCRYPT" : "DECRYPT";
+      var algorithm = ["AES","DES","3DES","CAST","RC4","RC2","Blowfish"][this.alg] || this.alg;
+      var mode = this.options === 2 ? "ECB" : "CBC";
+
+      console.log("\n[CCCrypt] " + operation + " | " + algorithm + "/" + mode);
+
+      <span class="c">// Print key material</span>
+      if (this.keyLen > 0 && !this.keyPtr.isNull()) {
+        <span class="h">console.log("  Key: " + Memory.readByteArray(this.keyPtr, this.keyLen));</span>
+      }
+
+      <span class="c">// Print IV</span>
+      if (!this.ivPtr.isNull()) {
+        console.log("  IV: " + Memory.readByteArray(this.ivPtr, 16));
+        var ivBytes = Memory.readByteArray(this.ivPtr, 16);
+        var isZero = new Uint8Array(ivBytes).every(b => b === 0);
+        if (isZero) { <span class="h">console.log("  [!] Static zero IV — CRITICAL");</span> }
+      }
+
+      <span class="c">// Print plaintext (for encrypt) or ciphertext (for decrypt)</span>
+      if (this.dataInLen > 0) {
+        var label = this.op === 0 ? "Plaintext" : "Ciphertext";
+        try {
+          var str = Memory.readUtf8String(this.dataIn, this.dataInLen);
+          <span class="h">console.log("  " + label + ": " + str);</span>
+        } catch(e) {
+          console.log("  " + label + " (hex): " +
+            Memory.readByteArray(this.dataIn, Math.min(this.dataInLen, 64)));
+        }
+      }
+    }
+  });
+  console.log("[*] CCCrypt hooked");
+}</pre>
+  </div>
+
+  <h3>Live Object Inspection</h3>
+  <div class="cmd-block">
+    <div class="cmd-head">frida REPL — inspect live objects in memory</div>
+    <div class="cmd-row"><span class="cmd-t">// Find all live instances of a class and read their properties
+var instances = ObjC.chooseSync(ObjC.classes.AuthManager);
+instances[0].authToken().toString();</span><span class="cmd-n">read live token from memory</span></div>
+    <div class="cmd-row"><span class="cmd-t">// Find and call methods on live objects
+var mgr = ObjC.chooseSync(ObjC.classes.SessionManager)[0];
+mgr.isLoggedIn().toString();</span><span class="cmd-n">call method on live instance</span></div>
+    <div class="cmd-row"><span class="cmd-t">// Set a property value on a live object
+var user = ObjC.chooseSync(ObjC.classes.UserModel)[0];
+user.setRole_(ObjC.classes.NSString.stringWithString_("admin"));</span><span class="cmd-n">privilege escalation via runtime property modification</span></div>
+    <div class="cmd-row"><span class="cmd-t">// Call a method that would normally require authentication
+var api = ObjC.chooseSync(ObjC.classes.APIClient)[0];
+api.fetchAdminDashboard();</span><span class="cmd-n">invoke privileged method directly</span></div>
+  </div>
+</div>
+
+<!-- ═══ S10: MEMORY ═══ -->
+<div class="div"></div>
+<div class="section" id="s10">
+  <div class="sec-head">
+    <span class="sec-num">10</span>
+    <div>
+      <h2>Memory Analysis</h2>
+      <p class="sec-sub">Data encrypted on disk must be plaintext in memory to be used. Dump process memory at the right moment and capture what the binary protects.</p>
+    </div>
+  </div>
+
+  <div class="think">
+    <div class="think-label">// ANALYST THINKING</div>
+    <p>Memory analysis on iOS is the technique that defeats everything else. An app can use the Keychain correctly, encrypt its database, have proper file protection — but at the moment it decrypts and uses that data, it's in plaintext RAM. Three timing windows matter: after login (tokens, decrypted user data), after a transaction (payment details in memory), and after logout (does the app clear sensitive data or leave it in RAM?). A token in memory after logout that's still valid server-side is a significant finding — it means session invalidation is incomplete.</p>
+  </div>
+
+  <h3>Memory Dump via Frida</h3>
+  <div class="cmd-block">
+    <div class="cmd-head">frida-ios-dump and memory scanning</div>
+    <div class="cmd-row"><span class="cmd-t"># Dump the full app binary (decrypted) — also dumps memory state
+frida-ios-dump -H 127.0.0.1 -p 2222 com.example.bankapp</span><span class="cmd-n">decrypts and dumps IPA — includes runtime state</span></div>
+    <div class="cmd-row"><span class="cmd-t"># Manual memory dump via Frida script:
+Process.enumerateRangesSync("rw-").forEach(function(range) {
+  Memory.scan(range.base, range.size, pattern, callbacks);
+});</span><span class="cmd-n">enumerate all read-write memory regions</span></div>
+  </div>
+
+  <div class="out-block">
+    <div class="out-label">Frida — scan all memory for JWT tokens and sensitive strings</div>
+    <pre class="out-pre">// memory_scan.js
+
+<span class="c">// Scan for JWT tokens (eyJ prefix in ASCII hex: 65 79 4A)</span>
+var jwtPattern = "65 79 4A";
+
+Process.enumerateRangesSync("r--").concat(
+  Process.enumerateRangesSync("rw-")
+).forEach(function(range) {
+  try {
+    Memory.scanSync(range.base, range.size, jwtPattern).forEach(function(match) {
+      try {
+        var token = Memory.readUtf8String(match.address, 200);
+        if (token && token.startsWith("eyJ")) {
+          <span class="h">console.log("[JWT FOUND] at " + match.address + ":\n  " + token.substring(0, 100));</span>
+        }
+      } catch(e) {}
+    });
+  } catch(e) {}
+});
+
+<span class="c">// Scan for password patterns (common passwords structure)</span>
+<span class="c">// Use after login — search for known password substring</span>
+var passwordHint = "MyBank";   <span class="c">// known prefix from test account</span>
+var encoded = [];
+for (var i = 0; i &lt; passwordHint.length; i++) {
+  encoded.push(passwordHint.charCodeAt(i).toString(16).padStart(2,"0"));
+}
+var pattern = encoded.join(" ");
+
+Process.enumerateRangesSync("rw-").forEach(function(range) {
+  try {
+    Memory.scanSync(range.base, range.size, pattern).forEach(function(match) {
+      <span class="h">console.log("[PASSWORD HINT] at " + match.address + ": " +
+        Memory.readUtf8String(match.address, 50));</span>
+    });
+  } catch(e) {}
+});</pre>
+  </div>
+
+  <h3>Timing — When to Dump</h3>
+  <div class="findings">
+    <div class="finding">
+      <div class="f-sev c">CRITICAL</div>
+      <div class="f-body">
+        <div class="f-title">Auth token or password found in memory after logout</div>
+        <div class="f-detail">Log in, perform a memory scan to establish baseline, log out, scan again. If the token still appears in memory after logout: the app does not clear sensitive data on sign-out. Combined with a server that doesn't invalidate tokens on logout, the token is still usable. This is a complete session persistence vulnerability — a shared/lost device remains compromised after logout.</div>
+      </div>
+    </div>
+    <div class="finding">
+      <div class="f-sev h">HIGH</div>
+      <div class="f-body">
+        <div class="f-title">Decrypted Keychain data visible in memory during app use</div>
+        <div class="f-detail">The app reads a Keychain item, decrypts it, and uses it in a struct or string in memory. The decrypted value lives in RAM until the reference is released and memory is cleared. A process memory dump mid-session captures this. Finding a value here that was properly encrypted at rest confirms the correct dynamic testing methodology — the encryption is sound, but memory forensics still extracts the secret.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ S11: BYPASS TECHNIQUES ═══ -->
+<div class="div"></div>
+<div class="section" id="s11">
+  <div class="sec-head">
+    <span class="sec-num">11</span>
+    <div>
+      <h2>Bypass Techniques Reference</h2>
+      <p class="sec-sub">The complete bypass playbook — jailbreak detection, biometrics, root checks, anti-Frida, and debugger detection.</p>
+    </div>
+  </div>
+
+  <div class="think">
+    <div class="think-label">// ANALYST THINKING</div>
+    <p>Every security control in an iOS app is ultimately a method call or a conditional branch. The question is always: what is the check, where is it, and what is the simplest way to make it return the value that lets me continue? Read the static analysis output to know exactly what checks exist and what method implements each one. Then apply the minimal bypass needed. objection covers 80% of cases. Custom Frida handles the rest. Understanding the bypass helps you write better findings — a bypass that takes one objection command is higher risk than one that requires binary patching.</p>
+  </div>
+
+  <h3>Jailbreak Detection Bypass</h3>
+  <div class="cmd-block">
+    <div class="cmd-head">bypass jailbreak detection</div>
+    <div class="cmd-row"><span class="cmd-t">ios jailbreak disable</span><span class="cmd-n">objection — hooks common detection methods, try first</span></div>
+    <div class="cmd-row"><span class="cmd-t">ios jailbreak simulate</span><span class="cmd-n">confirm detection is working before bypassing</span></div>
+    <div class="cmd-row"><span class="cmd-t"># Liberty Lite or A-Bypass (Cydia tweaks) — system-level bypass
+# Works when Frida-based approaches fail because check runs before injection</span><span class="cmd-n">tweak-based bypass</span></div>
+    <div class="cmd-row"><span class="cmd-t"># Spawn with Frida before app code runs:
+frida -U -f com.example.bankapp -l jailbreak_bypass.js --no-pause</span><span class="cmd-n">early injection bypasses checks that run in +load or main</span></div>
+  </div>
+
+  <div class="out-block">
+    <div class="out-label">Custom jailbreak bypass — targeting specific checks from static analysis</div>
+    <pre class="out-pre">// jailbreak_bypass.js — targeted bypass after reading static analysis
+
+if (ObjC.available) {
+  <span class="c">// Bypass 1: Hook the exact JB detection method (from class-dump)</span>
+  var JailbreakDetector = ObjC.classes.JailbreakDetector;
+  Interceptor.attach(
+    JailbreakDetector["+ isDeviceJailbroken"].implementation,
+    { onLeave: function(rv) { rv.replace(<span class="h">0</span>); } }
+  );
+
+  <span class="c">// Bypass 2: Hook file existence checks for common JB paths</span>
+  var NSFileManager = ObjC.classes.NSFileManager;
+  var jbPaths = ["/Applications/Cydia.app", "/usr/sbin/sshd",
+                 "/bin/bash", "/private/var/lib/apt", "/usr/libexec/cydia"];
+  Interceptor.attach(
+    NSFileManager["- fileExistsAtPath:"].implementation,
+    {
+      onEnter: function(args) {
+        var path = new ObjC.Object(args[2]).toString();
+        this.isJBPath = jbPaths.some(p => path.includes(p));
+      },
+      onLeave: function(retval) {
+        if (this.isJBPath) {
+          retval.replace(<span class="h">0</span>);   <span class="c">// file does not exist</span>
+          console.log("[JB] Blocked file check, returned NO");
+        }
+      }
+    }
+  );
+
+  <span class="c">// Bypass 3: Hook fork() — returns -1 (fail) on non-jailbroken</span>
+  var forkPtr = Module.findExportByName(null, "fork");
+  if (forkPtr) {
+    Interceptor.replace(forkPtr, new NativeCallback(function() {
+      return -1;  <span class="c">// simulate non-jailbroken behaviour</span>
+    }, "int", []));
+  }
+}
+console.log("[*] Jailbreak bypass active");</pre>
+  </div>
+
+  <h3>Anti-Frida Detection Bypass</h3>
+  <p class="body">Some apps detect Frida by checking for the frida-agent dylib in the process, scanning memory for Frida signatures, or checking for the Frida port (27042). Each check has a bypass.</p>
+
+  <div class="cmd-block">
+    <div class="cmd-head">anti-Frida evasion</div>
+    <div class="cmd-row"><span class="cmd-t"># Use Frida gadget instead of frida-server — embedded in IPA
+# Repackage app with FridaGadget.dylib embedded — looks like app code not server</span><span class="cmd-n">harder to detect than frida-server</span></div>
+    <div class="cmd-row"><span class="cmd-t"># Use Frida anonymisation: frida-server with randomised port
+frida-server -l 0.0.0.0:31337</span><span class="cmd-n">non-default port avoids port-27042 checks</span></div>
+    <div class="cmd-row"><span class="cmd-t"># Patch app's Frida detection with binary patch via jtool2
+# Find the port-check or memory-scan function in Ghidra
+# NOP the detection branch</span><span class="cmd-n">binary-level evasion</span></div>
+    <div class="cmd-row"><span class="cmd-t"># objection includes basic anti-detection — try first
+objection -g com.example.bankapp explore</span><span class="cmd-n">objection has built-in evasion</span></div>
+  </div>
+
+  <h3>Biometric Bypass — The Full Picture</h3>
+  <div class="out-block">
+    <div class="out-label">Two types of biometric — only one is bypassable at the app layer</div>
+    <pre class="out-pre"><span class="c">// TYPE 1: Client-side LAContext evaluation (BYPASSABLE)</span>
+let context = LAContext()
+context.evaluatePolicy(.deviceOwnerAuthentication,
+  localizedReason: "Authenticate") { success, _ in
+    if success {
+        showApp()  <span class="c">// ← purely client-side decision</span>
+    }
+}
+
+<span class="h">Bypass: ios ui biometrics_bypass (objection)</span>
+<span class="h">Or: Hook LAContext.evaluatePolicy, call completion handler with success=true</span>
+
+Frida hook:
+var LAContext = ObjC.classes.LAContext;
+Interceptor.attach(
+  LAContext["- evaluatePolicy:localizedReason:reply:"].implementation,
+  {
+    onEnter: function(args) {
+      var reply = new ObjC.Block(args[4]);
+      var savedImpl = reply.implementation;
+      reply.implementation = function(success, error) {
+        savedImpl(1, null);   <span class="h">// success = YES always</span>
+      };
+    }
+  }
+);
+
+<span class="c">// TYPE 2: Keychain-bound Secure Enclave key (NOT BYPASSABLE AT APP LAYER)</span>
+let query: [String:Any] = [
+    kSecClass: kSecClassKey,
+    kSecAttrKeyType: kSecAttrKeyTypeECSECPrimeRandom,
+    kSecAttrTokenID: kSecAttrTokenIDSecureEnclave,
+    kSecUseOperationPrompt: "Authenticate"
+]
+SecItemCopyMatching(query as CFDictionary, &result)
+
+<span class="g">// Biometric prompt happens inside Secure Enclave hardware</span>
+<span class="g">// Hooking LAContext does nothing — the auth is not in LAContext</span>
+<span class="g">// The key operation physically fails without real biometric</span>
+<span class="g">// This is correctly implemented biometric-protected cryptography</span></pre>
+  </div>
+</div>
+
+<!-- ═══ S12: CHECKLIST ═══ -->
+<div class="div"></div>
+<div class="section" id="s12">
+  <div class="sec-head">
+    <span class="sec-num">12</span>
+    <div>
+      <h2>Professional Checklist</h2>
+      <p class="sec-sub">Click to mark complete. Every item must be verified before the engagement closes.</p>
+    </div>
+  </div>
+
+  <div class="checklist">
+    <div class="check-item" onclick="toggle(this)"><div class="check-ph">SETUP</div><div class="check-wrap"><div class="check-box"></div><span class="check-text">Verified jailbreak is active — Frida server running, frida-ps -U returns process list</span></div></div>
+    <div class="check-item" onclick="toggle(this)"><div class="check-ph">SETUP</div><div class="check-wrap"><div class="check-box"></div><span class="check-text">Changed default SSH root password from 'alpine'</span></div></div>
+    <div class="check-item" onclick="toggle(this)"><div class="check-ph">SETUP</div><div class="check-wrap"><div class="check-box"></div><span class="check-text">Burp CA certificate installed AND full trust enabled in Certificate Trust Settings</span></div></div>
+    <div class="check-item" onclick="toggle(this)"><div class="check-ph">SETUP</div><div class="check-wrap"><div class="check-box"></div><span class="check-text">Confirmed non-encrypted IPA (cryptid=0) before analysis</span></div></div>
+    <div class="check-item" onclick="toggle(this)"><div class="check-ph">FRIDA</div><div class="check-wrap"><div class="check-box"></div><span class="check-text">Enumerated all classes — filtered for auth, token, crypto, pin, network, session</span></div></div>
+    <div class="check-item" onclick="toggle(this)"><div class="check-ph">FRIDA</div><div class="check-wrap"><div class="check-box"></div><span class="check-text">Listed methods on all security-relevant classes — documented anything returning Bool</span></div></div>
+    <div class="check-item" onclick="toggle(this)"><div class="check-ph">FRIDA</div><div class="check-wrap"><div class="check-box"></div><span class="check-text">Used ObjC.chooseSync to find live instances — read token/credential properties directly</span></div></div>
+    <div class="check-item" onclick="toggle(this)"><div class="check-ph">OBJECTION</div><div class="check-wrap"><div class="check-box"></div><span class="check-text">Ran ios jailbreak disable — confirmed app behaves normally without blocking</span></div></div>
+    <div class="check-item" onclick="toggle(this)"><div class="check-ph">OBJECTION</div><div class="check-wrap"><div class="check-box"></div><span class="check-text">Ran ios sslpinning disable — confirmed Burp captures HTTPS traffic</span></div></div>
+    <div class="check-item" onclick="toggle(this)"><div class="check-ph">OBJECTION</div><div class="check-wrap"><div class="check-box"></div><span class="check-text">Ran ios keychain dump — analysed every item's value AND accessibility level</span></div></div>
+    <div class="check-item" onclick="toggle(this)"><div class="check-ph">OBJECTION</div><div class="check-wrap"><div class="check-box"></div><span class="check-text">Ran ios nsuserdefaults get — checked for sensitive data stored outside Keychain</span></div></div>
+    <div class="check-item" onclick="toggle(this)"><div class="check-ph">OBJECTION</div><div class="check-wrap"><div class="check-box"></div><span class="check-text">Ran ios monitor crypto — captured algorithm, key, IV, and plaintext for all CCCrypt calls</span></div></div>
+    <div class="check-item" onclick="toggle(this)"><div class="check-ph">OBJECTION</div><div class="check-wrap"><div class="check-box"></div><span class="check-text">Tested ios ui biometrics_bypass — confirmed whether biometric is LAContext or Keychain-bound</span></div></div>
+    <div class="check-item" onclick="toggle(this)"><div class="check-ph">PINNING</div><div class="check-wrap"><div class="check-box"></div><span class="check-text">Confirmed SSL pinning status — objection bypass → Kill Switch 2 → custom hook → binary patch</span></div></div>
+    <div class="check-item" onclick="toggle(this)"><div class="check-ph">PINNING</div><div class="check-wrap"><div class="check-box"></div><span class="check-text">Documented bypass method used — trivial bypass is a higher finding than complex bypass</span></div></div>
+    <div class="check-item" onclick="toggle(this)"><div class="check-ph">KEYCHAIN</div><div class="check-wrap"><div class="check-box"></div><span class="check-text">Checked every Keychain item — accessibility level documented for each credential</span></div></div>
+    <div class="check-item" onclick="toggle(this)"><div class="check-ph">KEYCHAIN</div><div class="check-wrap"><div class="check-box"></div><span class="check-text">Flagged any kSecAttrAccessibleAlways or kSecAttrAccessibleAfterFirstUnlock on auth tokens</span></div></div>
+    <div class="check-item" onclick="toggle(this)"><div class="check-ph">KEYCHAIN</div><div class="check-wrap"><div class="check-box"></div><span class="check-text">Checked for passwords stored in Keychain — tokens only should be stored, never passwords</span></div></div>
+    <div class="check-item" onclick="toggle(this)"><div class="check-ph">KEYCHAIN</div><div class="check-wrap"><div class="check-box"></div><span class="check-text">Monitored SecItemAdd with Frida — confirmed what accessibility level is used when token written</span></div></div>
+    <div class="check-item" onclick="toggle(this)"><div class="check-ph">FILES</div><div class="check-wrap"><div class="check-box"></div><span class="check-text">Mapped full app container — Documents/, Library/, tmp/, shared group container</span></div></div>
+    <div class="check-item" onclick="toggle(this)"><div class="check-ph">FILES</div><div class="check-wrap"><div class="check-box"></div><span class="check-text">Read NSUserDefaults plist — checked for tokens, credentials, sensitive flags</span></div></div>
+    <div class="check-item" onclick="toggle(this)"><div class="check-ph">FILES</div><div class="check-wrap"><div class="check-box"></div><span class="check-text">Read Cache.db — checked for sensitive data in NSURLCache response store</span></div></div>
+    <div class="check-item" onclick="toggle(this)"><div class="check-ph">FILES</div><div class="check-wrap"><div class="check-box"></div><span class="check-text">Opened all SQLite databases — enumerated every table and sampled data</span></div></div>
+    <div class="check-item" onclick="toggle(this)"><div class="check-ph">FILES</div><div class="check-wrap"><div class="check-box"></div><span class="check-text">Checked app switcher screenshot files — verified sensitive screens are blanked on background</span></div></div>
+    <div class="check-item" onclick="toggle(this)"><div class="check-ph">NETWORK</div><div class="check-wrap"><div class="check-box"></div><span class="check-text">Captured all API traffic — sent every endpoint to Burp Repeater</span></div></div>
+    <div class="check-item" onclick="toggle(this)"><div class="check-ph">NETWORK</div><div class="check-wrap"><div class="check-box"></div><span class="check-text">Tested IDOR on every numeric ID, UUID, and account-specific parameter</span></div></div>
+    <div class="check-item" onclick="toggle(this)"><div class="check-ph">NETWORK</div><div class="check-wrap"><div class="check-box"></div><span class="check-text">Tested every endpoint without Authorization header — confirmed server rejects unauthenticated</span></div></div>
+    <div class="check-item" onclick="toggle(this)"><div class="check-ph">NETWORK</div><div class="check-wrap"><div class="check-box"></div><span class="check-text">Checked response headers for Cache-Control: no-store on authenticated responses</span></div></div>
+    <div class="check-item" onclick="toggle(this)"><div class="check-ph">RUNTIME</div><div class="check-wrap"><div class="check-box"></div><span class="check-text">Hooked all Bool-returning security methods — confirmed client-side vs server-side enforcement</span></div></div>
+    <div class="check-item" onclick="toggle(this)"><div class="check-ph">RUNTIME</div><div class="check-wrap"><div class="check-box"></div><span class="check-text">Hooked login method — confirmed credential handling before encryption</span></div></div>
+    <div class="check-item" onclick="toggle(this)"><div class="check-ph">RUNTIME</div><div class="check-wrap"><div class="check-box"></div><span class="check-text">Hooked CCCrypt — checked algorithm, mode, IV randomness, and key source</span></div></div>
+    <div class="check-item" onclick="toggle(this)"><div class="check-ph">MEMORY</div><div class="check-wrap"><div class="check-box"></div><span class="check-text">Scanned memory post-login for JWT tokens and credential strings</span></div></div>
+    <div class="check-item" onclick="toggle(this)"><div class="check-ph">MEMORY</div><div class="check-wrap"><div class="check-box"></div><span class="check-text">Scanned memory post-logout — verified tokens are cleared from RAM on sign-out</span></div></div>
+  </div>
+
+  <div id="prog-summary" style="margin-top:14px;font-family:'Space Mono',monospace;font-size:11px;color:var(--muted);">
+    0 / 33 items completed
+  </div>
+</div>
+<div class="div"></div>
+</div>
+
+<footer style="padding:24px 64px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;position:relative;z-index:1;">
+  <span style="font-family:'Space Mono',monospace;font-size:10px;color:var(--dimmed);letter-spacing:1px;">iOS DYNAMIC ANALYSIS — ADVANCED FIELD GUIDE</span>
+  <span style="font-family:'Space Mono',monospace;font-size:10px;color:var(--dimmed);">For authorized security testing only</span>
+</footer>
+</main>
+
+<script>
+window.addEventListener('scroll', () => {
+  const el = document.documentElement;
+  const pct = (el.scrollTop / (el.scrollHeight - el.clientHeight)) * 100;
+  document.getElementById('prog').style.width = pct + '%';
+});
+const sections = document.querySelectorAll('.section');
+const navLinks = document.querySelectorAll('.nav-link');
+const obs = new IntersectionObserver(entries => {
+  entries.forEach(e => {
+    if (e.isIntersecting) {
+      navLinks.forEach(l => l.classList.remove('active'));
+      const lnk = document.querySelector(`.nav-link[href="#${e.target.id}"]`);
+      if (lnk) lnk.classList.add('active');
+    }
+  });
+}, { threshold: 0.2 });
+sections.forEach(s => obs.observe(s));
+function toggle(el) {
+  el.classList.toggle('done');
+  el.querySelector('.check-box').textContent = el.classList.contains('done') ? '✓' : '';
+  const total = document.querySelectorAll('.check-item').length;
+  const done  = document.querySelectorAll('.check-item.done').length;
+  document.getElementById('prog-summary').textContent = `${done} / ${total} items completed`;
+}
+</script>
+</body>
+</html>
